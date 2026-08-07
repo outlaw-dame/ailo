@@ -1,0 +1,60 @@
+import { ipcMain, logger } from "@glaze/core/backend";
+
+import { githubService } from "../services/github-service.js";
+import { postsStore } from "../services/posts-store.js";
+import { profileStore } from "../services/profile-store.js";
+import { solidService } from "../services/solid-service.js";
+
+/**
+ * Unified publish: marks the post published locally, then pushes to any
+ * connected destinations (Solid Pod and/or GitHub repo).
+ */
+export function registerPublishHandlers(): void {
+  ipcMain.handle("publish:post", async (_event, postId: unknown) => {
+    if (typeof postId !== "string" || !postId) throw new Error("Post id is required");
+
+    try {
+      const post = await postsStore.get(postId);
+      if (!post) throw new Error(`Post not found: ${postId}`);
+
+      // Ensure local status flips to published even if remote targets fail.
+      let updated = await postsStore.update(postId, { status: "published" });
+
+      const profile = await profileStore.get();
+      const results: {
+        solid?: { ok: true; url: string } | { ok: false; error: string };
+        github?: { ok: true; path: string; htmlUrl: string } | { ok: false; error: string };
+      } = {};
+
+      const solidStatus = await solidService.getStatus();
+      if (solidStatus.connected) {
+        try {
+          const solid = await solidService.publishPost(updated);
+          updated = await postsStore.markPublished(postId, { solidUrl: solid.url });
+          results.solid = { ok: true, url: solid.url };
+        } catch (error) {
+          results.solid = { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      }
+
+      const githubConnected = await githubService.isConnected();
+      if (githubConnected && profile.githubRepo) {
+        try {
+          const github = await githubService.publishPost(updated);
+          updated = await postsStore.markPublished(postId, { githubPath: github.path });
+          results.github = { ok: true, path: github.path, htmlUrl: github.htmlUrl };
+        } catch (error) {
+          results.github = {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+
+      return { post: updated, results };
+    } catch (error) {
+      logger.error("publish", `publish failed: ${String(error)}`);
+      throw error;
+    }
+  });
+}

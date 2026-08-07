@@ -4,10 +4,14 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { HomeView } from "./home-view";
-import { RootView } from "./root-view";
 import { QueryClient } from "@tanstack/react-query";
 import { ErrorBoundaryView } from "@glaze/core/components";
+
+import { EditorView } from "./editor-view";
+import { FeedView } from "./feed-view";
+import { PostDetailView } from "./post-detail-view";
+import { ProfileView } from "./profile-view";
+import { RootView } from "./root-view";
 
 const rootRoute = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -24,18 +28,57 @@ const rootRoute = createRootRouteWithContext<{
   },
 });
 
-const homeRoute = createRoute({
+const feedRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: HomeView,
-  staticData: {
-    title: "Home",
-  },
+  component: FeedView,
+  staticData: { title: "Feed" },
 });
 
-const routeTree = rootRoute.addChildren([homeRoute]);
+const writeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/write",
+  component: EditorView,
+  staticData: { title: "Write" },
+});
 
-const queryClient = new QueryClient();
+const editRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/write/$postId",
+  component: EditorView,
+  staticData: { title: "Edit" },
+});
+
+const postRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/post/$postId",
+  component: PostDetailView,
+  staticData: { title: "Note" },
+});
+
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/profile",
+  component: ProfileView,
+  staticData: { title: "Profile" },
+});
+
+const routeTree = rootRoute.addChildren([
+  feedRoute,
+  writeRoute,
+  editRoute,
+  postRoute,
+  profileRoute,
+]);
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+    },
+  },
+});
 
 const router = createRouter({
   routeTree,

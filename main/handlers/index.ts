@@ -8,9 +8,14 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 
 import { appHandlers } from "./app.js";
+import { registerGitHubHandlers } from "./github.js";
+import { registerPostsHandlers } from "./posts.js";
+import { registerProfileHandlers } from "./profile.js";
+import { registerPublishHandlers } from "./publish.js";
+import { registerSolidHandlers } from "./solid.js";
 import { getSettingsWindow, openSettingsWindow } from "../windows/settings-window.js";
 
-import { ipcMain, logger } from "@glaze/core/backend";
+import { ipcMain, logger, shell } from "@glaze/core/backend";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,18 +23,14 @@ const __dirname = path.dirname(__filename);
 export function registerHandlers(): void {
   logger.info("handlers", "Registering IPC handlers...");
 
-  // Register app handlers using ipcMain API
   ipcMain.handle("app:getInfo", async (_event) => {
     return await appHandlers.getInfo();
   });
 
-  // Return the .glaze project path (used for deep links back to the host)
-  // __dirname = build/main, so two levels up is the app root
   ipcMain.handle("app:getProjectPath", async () => {
     return path.join(__dirname, "..", "..");
   });
 
-  // Settings window handlers
   ipcMain.handle("window:openSettings", async (_event) => {
     await openSettingsWindow();
   });
@@ -38,12 +39,19 @@ export function registerHandlers(): void {
     getSettingsWindow()?.close();
   });
 
-  logger.info("handlers", "✓ IPC handlers registered");
+  ipcMain.handle("app:openExternal", async (_event, url: unknown) => {
+    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
+      throw new Error("Only http(s) URLs can be opened");
+    }
+    await shell.openExternal(url);
+    return { ok: true };
+  });
 
-  // TODO: Add more handlers here using ipcMain.handle()
-  // Example:
-  // ipcMain.handle('file:read', async (event, path) => {
-  //   const fs = await import('fs/promises');
-  //   return await fs.readFile(path, 'utf-8');
-  // });
+  registerPostsHandlers();
+  registerProfileHandlers();
+  registerGitHubHandlers();
+  registerSolidHandlers();
+  registerPublishHandlers();
+
+  logger.info("handlers", "✓ IPC handlers registered");
 }

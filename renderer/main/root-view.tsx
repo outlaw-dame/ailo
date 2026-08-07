@@ -3,14 +3,14 @@ import * as React from "react";
 import { SplitView, Status } from "@glaze/core/components";
 import { useTheme, useConnection, useEnvironment } from "@glaze/core/hooks";
 
+import { AppSidebar } from "../components/app-sidebar";
+
 export function RootView() {
   useTheme();
 
-  // IPC connection and environment
   const connectionQuery = useConnection();
   const environmentQuery = useEnvironment();
 
-  // Cleanup IPC connection on unmount
   React.useEffect(() => {
     return () => {
       console.log("[RootView] cleanup - disconnecting IPC client");
@@ -20,9 +20,13 @@ export function RootView() {
 
   return (
     <div className="h-full relative [&:not(:has([data-toolbar]))_.drag-region]:z-50">
-      {/* Draggable top bar - fallback for when no toolbar is present */}
       <div className="drag-region fixed top-0 left-0 right-0 h-13" />
-      <SplitView className="h-full">
+      <SplitView
+        className="h-full"
+        storageKey="knot-shell"
+        sidebar={<AppSidebar />}
+        sidebarSize={{ default: 200, min: 180, max: 260 }}
+      >
         <Outlet />
       </SplitView>
 
@@ -30,10 +34,14 @@ export function RootView() {
         {import.meta.env.DEV ? (
           <>
             {connectionQuery.error ? <Status variant="error">Backend disconnected</Status> : null}
-            {environmentQuery.data ? null : <Status variant="error">Dev Server not found</Status>}
+            {environmentQuery.data ? null : <TextDevServerMissing />}
           </>
         ) : null}
       </div>
     </div>
   );
+}
+
+function TextDevServerMissing() {
+  return <Status variant="error">Dev Server not found</Status>;
 }
