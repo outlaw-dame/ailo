@@ -167,13 +167,13 @@ export function ProfileView() {
   const solid = solidQuery.data;
 
   return (
-    <ScrollArea title="Profile" subtitle="Identity, destinations, and booking" className="h-full">
+    <ScrollArea title="You" subtitle="Identity, destinations, and booking" className="h-full">
       <div className="px-8 py-6 max-w-3xl flex flex-col gap-8 pb-16">
         <section className="flex flex-col gap-3">
           <div>
-            <Text variant="heading2">About you</Text>
+            <Text variant="heading2">Masthead</Text>
             <Text color="secondary" className="mt-1">
-              A short public face for the knowledge you share.
+              The quiet byline behind the knowledge you share.
             </Text>
           </div>
           <FieldGroup>

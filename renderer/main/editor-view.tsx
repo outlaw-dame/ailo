@@ -59,7 +59,7 @@ export function EditorView() {
     if (!postId) {
       setTitle("");
       setBody(
-        "# A note worth sharing\n\nWrite in **Markdown**, drop in <em>HTML</em>, and use emoji 🌿 freely.\n\n![A descriptive image](https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1200)\n",
+        "Knowledge compounds when it is written down and shared.\n\nWrite in **Markdown**, drop in <em>HTML</em>, and use emoji freely.\n\n> A tiny paper is enough — one clear idea, carefully told.\n\n![Morning light over open water](https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1400)\n",
       );
       setContentWarningEnabled(false);
       setContentWarning("");
@@ -149,8 +149,8 @@ export function EditorView() {
 
   return (
     <ScrollArea
-      title={isEditing ? "Edit note" : "Write"}
-      subtitle="Markdown · HTML · emoji"
+      title={isEditing ? "Edit story" : "Compose"}
+      subtitle="Markdown · HTML · emoji — a tiny paper"
       leading={
         <ToolbarBackButton
           onClick={() => {
@@ -377,7 +377,7 @@ export function EditorView() {
         </div>
 
         <Text variant="small" color="quaternary">
-          Publish saves locally and pushes to any connected Solid Pod and GitHub repository.
+          Publish keeps a local copy, then shares to any connected Solid Pod and GitHub repository.
         </Text>
       </div>
     </ScrollArea>

@@ -1,6 +1,6 @@
 import * as React from "react";
-import { AlertTriangle } from "lucide-react";
-import { Button, Callout, Text } from "@glaze/core/components";
+import { AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { Button, Text } from "@glaze/core/components";
 
 interface ContentWarningGateProps {
   warning: string;
@@ -12,33 +12,42 @@ export function ContentWarningGate({ warning, children }: ContentWarningGateProp
 
   if (revealed) {
     return (
-      <div className="flex flex-col gap-3">
-        <Callout
-          color="yellow"
-          icon={<AlertTriangle />}
-          actions={
-            <Button size="small" variant="transparent" onClick={() => setRevealed(false)}>
-              Hide
-            </Button>
-          }
-        >
-          Content warning: {warning}
-        </Callout>
+      <div className="flex flex-col gap-5">
+        <div className="flex items-center justify-between gap-3 rounded-card bg-well px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <AlertTriangle className="size-4 shrink-0 text-support-yellow" />
+            <Text variant="small" color="secondary" className="truncate">
+              Content warning · {warning}
+            </Text>
+          </div>
+          <Button size="small" variant="transparent" onClick={() => setRevealed(false)}>
+            <EyeOff />
+            Hide
+          </Button>
+        </div>
         {children}
       </div>
     );
   }
 
   return (
-    <div className="rounded-control border border-secondary bg-well px-5 py-6 flex flex-col items-start gap-3">
-      <div className="flex items-center gap-2">
-        <AlertTriangle className="size-4 shrink-0 text-support-yellow" />
-        <Text variant="strong">Content warning</Text>
+    <div className="relative overflow-hidden rounded-card bg-well">
+      <div className="knot-mesh-2 pointer-events-none absolute inset-0 opacity-50" />
+      <div className="relative flex flex-col items-start gap-4 px-6 py-8 sm:px-8">
+        <div className="flex size-10 items-center justify-center rounded-full bg-control-subtle">
+          <AlertTriangle className="size-5 text-support-yellow" />
+        </div>
+        <div className="flex max-w-md flex-col gap-2">
+          <Text variant="heading2">Before you continue</Text>
+          <Text color="secondary" className="text-pretty">
+            {warning}
+          </Text>
+        </div>
+        <Button size="small" variant="accent" onClick={() => setRevealed(true)}>
+          <Eye />
+          Show story
+        </Button>
       </div>
-      <Text color="secondary">{warning}</Text>
-      <Button size="small" variant="filled" onClick={() => setRevealed(true)}>
-        Show content
-      </Button>
     </div>
   );
 }

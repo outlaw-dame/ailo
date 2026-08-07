@@ -1,15 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { PenLine } from "lucide-react";
-import {
-  Button,
-  EmptyState,
-  List,
-  ScrollArea,
-  Text,
-} from "@glaze/core/components";
+import { Button, EmptyState, ScrollArea, Text } from "@glaze/core/components";
 
 import { PostCard } from "../components/post-card";
+import { StoryCover } from "../components/story-cover";
 import { api } from "../lib/api";
 
 export function FeedView() {
@@ -23,10 +18,20 @@ export function FeedView() {
   const published = posts.filter((post) => post.status === "published");
   const drafts = posts.filter((post) => post.status === "draft");
 
+  const cover = published[0] ?? posts[0] ?? null;
+  const restPublished = published.filter((post) => post.id !== cover?.id);
+  const restDrafts = drafts.filter((post) => post.id !== cover?.id);
+
   return (
     <ScrollArea
-      title="Feed"
-      subtitle={postsQuery.isLoading ? "Loading…" : `${posts.length} note${posts.length === 1 ? "" : "s"}`}
+      title="Stories"
+      subtitle={
+        postsQuery.isLoading
+          ? "Loading…"
+          : posts.length === 0
+            ? "A tiny paper for shared knowledge"
+            : `${posts.length} ${posts.length === 1 ? "story" : "stories"}`
+      }
       actions={
         <Button
           variant="accent"
@@ -36,59 +41,81 @@ export function FeedView() {
           }}
         >
           <PenLine />
-          New
+          Compose
         </Button>
       }
       className="h-full"
     >
       {postsQuery.isLoading ? (
-        <div className="px-5 py-4 flex flex-col gap-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-14 rounded-control bg-control-subtle animate-pulse" />
-          ))}
+        <div className="flex flex-col gap-5 px-6 py-5">
+          <div className="h-[320px] w-full animate-pulse rounded-card bg-control-subtle" />
+          <div className="h-36 w-full animate-pulse rounded-card bg-control-subtle" />
+          <div className="h-36 w-full animate-pulse rounded-card bg-control-subtle" />
         </div>
       ) : posts.length === 0 ? (
-        <EmptyState
-          title="Share your first idea"
-          description="Knot is a tiny place to write knowledge down and publish it to your Solid Pod and GitHub. Markdown, HTML, and emoji welcome."
-          actions={
-            <Button
-              variant="accent"
-              onClick={() => {
-                void navigate({ to: "/write" });
-              }}
-            >
-              <PenLine />
-              Write a note
-            </Button>
-          }
-        />
+        <div className="relative flex min-h-[calc(100%-1px)] flex-col">
+          <div className="knot-mesh-0 pointer-events-none absolute inset-x-6 top-4 h-56 rounded-card opacity-70" />
+          <EmptyState
+            title="Start a tiny paper"
+            description="Write one honest note. Markdown, HTML, and emoji welcome — publish to your Solid Pod and GitHub when you're ready to share."
+            actions={
+              <Button
+                variant="accent"
+                onClick={() => {
+                  void navigate({ to: "/write" });
+                }}
+              >
+                <PenLine />
+                Compose the first story
+              </Button>
+            }
+          />
+        </div>
       ) : (
-        <div className="pb-8">
-          {published.length > 0 ? (
-            <div className="px-3 pt-2">
-              <Text variant="small-strong" color="tertiary" className="px-2 py-1.5">
-                Published
+        <div className="flex flex-col gap-8 px-6 pb-12 pt-4">
+          {cover ? (
+            <section className="flex flex-col gap-3">
+              <Text variant="small-strong" color="tertiary" className="px-0.5 tracking-wide uppercase">
+                Today
               </Text>
-              <List.Root items={published} getItemKey={(post) => post.id}>
-                {published.map((post) => (
-                  <PostCard key={post.id} post={post} />
-                ))}
-              </List.Root>
-            </div>
+              <StoryCover post={cover} />
+            </section>
           ) : null}
 
-          {drafts.length > 0 ? (
-            <div className="px-3 pt-4">
-              <Text variant="small-strong" color="tertiary" className="px-2 py-1.5">
-                Drafts
-              </Text>
-              <List.Root items={drafts} getItemKey={(post) => post.id}>
-                {drafts.map((post) => (
+          {restPublished.length > 0 ? (
+            <section className="flex flex-col gap-3">
+              <div className="flex items-baseline justify-between gap-3 px-0.5">
+                <Text variant="small-strong" color="tertiary" className="tracking-wide uppercase">
+                  More stories
+                </Text>
+                <Text variant="mini" color="quaternary" className="tabular-nums">
+                  {restPublished.length}
+                </Text>
+              </div>
+              <div className="flex flex-col gap-3">
+                {restPublished.map((post) => (
                   <PostCard key={post.id} post={post} />
                 ))}
-              </List.Root>
-            </div>
+              </div>
+            </section>
+          ) : null}
+
+          {restDrafts.length > 0 ? (
+            <section className="flex flex-col gap-3">
+              <div className="flex items-baseline justify-between gap-3 px-0.5">
+                <Text variant="small-strong" color="tertiary" className="tracking-wide uppercase">
+                  On the desk
+                </Text>
+                <Text variant="mini" color="quaternary" className="tabular-nums">
+                  {restDrafts.length} draft{restDrafts.length === 1 ? "" : "s"}
+                </Text>
+              </div>
+              <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
+                {restDrafts.map((post) => (
+                  <PostCard key={post.id} post={post} compact />
+                ))}
+              </div>
+            </section>
           ) : null}
         </div>
       )}

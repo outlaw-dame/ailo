@@ -8,3 +8,65 @@
 @source "./**/*.{ts,tsx}";
 @source not "./preload.ts";
 @source not "./dev/**/*";
+
+/*
+ * Editorial theme — warm paper × ink
+ * Mesh of tiny personal blog intimacy + Facebook Paper magazine immersion.
+ * Light seeds are intentionally oversaturated (composited at ~40% over material).
+ */
+:root {
+  --bg: #f3d7a8;
+  --bg-secondary: #edd09a;
+  --fg: #1c1410;
+  --theme-accent: #c45c2a;
+  --selection: #e8a070;
+  --loader: #c45c2a;
+}
+
+.dark {
+  --bg: #14100e;
+  --bg-secondary: #1c1612;
+  --fg: #f6ebe0;
+  --theme-accent: #e89a6a;
+  --selection: #c45c2a;
+  --loader: #e89a6a;
+}
+
+/* Magazine reading measure + editorial prose rhythm */
+.knot-prose {
+  font-feature-settings: "kern" 1, "liga" 1, "onum" 1;
+}
+
+.knot-prose > *:first-child {
+  margin-top: 0;
+}
+
+/* Cover mesh backgrounds (no external image) — soft paper-like washes */
+.knot-mesh-0 {
+  background:
+    radial-gradient(120% 80% at 12% 18%, color-mix(in oklab, var(--theme-accent) 42%, transparent), transparent 58%),
+    radial-gradient(90% 70% at 88% 12%, color-mix(in oklab, var(--fg) 14%, transparent), transparent 55%),
+    radial-gradient(70% 90% at 50% 100%, color-mix(in oklab, var(--theme-accent) 22%, transparent), transparent 60%),
+    color-mix(in oklab, var(--fg) 8%, transparent);
+}
+.knot-mesh-1 {
+  background:
+    radial-gradient(100% 90% at 80% 20%, color-mix(in oklab, var(--theme-accent) 36%, transparent), transparent 55%),
+    radial-gradient(80% 70% at 10% 80%, color-mix(in oklab, var(--fg) 16%, transparent), transparent 50%),
+    radial-gradient(60% 50% at 40% 30%, color-mix(in oklab, var(--theme-accent) 18%, transparent), transparent 55%),
+    color-mix(in oklab, var(--fg) 7%, transparent);
+}
+.knot-mesh-2 {
+  background:
+    radial-gradient(110% 80% at 20% 90%, color-mix(in oklab, var(--theme-accent) 38%, transparent), transparent 58%),
+    radial-gradient(90% 70% at 90% 70%, color-mix(in oklab, var(--fg) 12%, transparent), transparent 52%),
+    radial-gradient(50% 60% at 50% 10%, color-mix(in oklab, var(--theme-accent) 20%, transparent), transparent 50%),
+    color-mix(in oklab, var(--fg) 8%, transparent);
+}
+.knot-mesh-3 {
+  background:
+    radial-gradient(100% 100% at 50% 0%, color-mix(in oklab, var(--theme-accent) 34%, transparent), transparent 55%),
+    radial-gradient(80% 80% at 0% 50%, color-mix(in oklab, var(--fg) 14%, transparent), transparent 50%),
+    radial-gradient(70% 70% at 100% 80%, color-mix(in oklab, var(--theme-accent) 24%, transparent), transparent 55%),
+    color-mix(in oklab, var(--fg) 7%, transparent);
+}

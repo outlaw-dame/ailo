@@ -6,9 +6,9 @@ import { Sidebar, SidebarList, SidebarListItem } from "@glaze/core/components";
 type NavId = "feed" | "write" | "profile";
 
 const NAV: Array<{ id: NavId; title: string; path: string; icon: React.ReactNode }> = [
-  { id: "feed", title: "Feed", path: "/", icon: <BookOpen /> },
-  { id: "write", title: "Write", path: "/write", icon: <PenLine /> },
-  { id: "profile", title: "Profile", path: "/profile", icon: <UserRound /> },
+  { id: "feed", title: "Stories", path: "/", icon: <BookOpen /> },
+  { id: "write", title: "Compose", path: "/write", icon: <PenLine /> },
+  { id: "profile", title: "You", path: "/profile", icon: <UserRound /> },
 ];
 
 function activeNav(pathname: string): NavId {

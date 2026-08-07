@@ -23,9 +23,9 @@ export function RootView() {
       <div className="drag-region fixed top-0 left-0 right-0 h-13" />
       <SplitView
         className="h-full"
-        storageKey="knot-shell"
+        storageKey="knot-shell-v2"
         sidebar={<AppSidebar />}
-        sidebarSize={{ default: 200, min: 180, max: 260 }}
+        sidebarSize={{ default: 188, min: 168, max: 240 }}
       >
         <Outlet />
       </SplitView>
@@ -34,14 +34,10 @@ export function RootView() {
         {import.meta.env.DEV ? (
           <>
             {connectionQuery.error ? <Status variant="error">Backend disconnected</Status> : null}
-            {environmentQuery.data ? null : <TextDevServerMissing />}
+            {environmentQuery.data ? null : <Status variant="error">Dev Server not found</Status>}
           </>
         ) : null}
       </div>
     </div>
   );
-}
-
-function TextDevServerMissing() {
-  return <Status variant="error">Dev Server not found</Status>;
 }

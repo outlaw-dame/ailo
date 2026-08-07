@@ -16,7 +16,6 @@ export function extractImageSources(markdown: string): string[] {
   while ((match = re.exec(markdown)) !== null) {
     if (!sources.includes(match[1])) sources.push(match[1]);
   }
-  // HTML <img src="...">
   const htmlRe = /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi;
   while ((match = htmlRe.exec(markdown)) !== null) {
     if (!sources.includes(match[1])) sources.push(match[1]);
@@ -24,12 +23,25 @@ export function extractImageSources(markdown: string): string[] {
   return sources;
 }
 
+/** First image URL in a note — used for Paper-style cover art. */
+export function firstImageSrc(markdown: string): string | null {
+  return extractImageSources(markdown)[0] ?? null;
+}
+
+/** Stable 0–3 mesh index from an id (cover art without photos). */
+export function meshIndexForId(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return hash % 4;
+}
+
 function applyAltTexts(html: string, altTexts: ImageAltText[]): string {
   let result = html;
   for (const entry of altTexts) {
     if (!entry.alt) continue;
     const escaped = entry.src.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Replace empty or existing alt on matching src
     result = result.replace(
       new RegExp(`(<img\\b[^>]*\\bsrc=["']${escaped}["'][^>]*?)\\balt=["'][^"']*["']`, "gi"),
       `$1alt="${entry.alt.replace(/"/g, "&quot;")}"`,
@@ -51,12 +63,12 @@ export function renderMarkdown(markdown: string, altTexts: ImageAltText[] = []):
   });
 }
 
-export function excerptFromBody(body: string, max = 140): string {
+export function excerptFromBody(body: string, max = 160): string {
   const plain = body
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`[^`]*`/g, " ")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
-    .replace(/\[[^\]]*\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/<[^>]+>/g, " ")
     .replace(/[#>*_~`-]+/g, " ")
     .replace(/\s+/g, " ")
@@ -80,5 +92,16 @@ export function formatRelativeDate(iso: string): string {
     month: "short",
     day: "numeric",
     year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
+  });
+}
+
+export function formatLongDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
   });
 }
