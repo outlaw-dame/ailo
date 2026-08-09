@@ -8,6 +8,8 @@ import type {
   FediPodStatus,
   FediverseVisibility,
   MastodonAccount,
+  MastodonCard,
+  MastodonCardAuthor,
   MastodonMediaAttachment,
   MastodonNotification,
   MastodonStatus,
@@ -64,6 +66,29 @@ function mapMedia(raw: unknown): MastodonMediaAttachment {
   };
 }
 
+/** Mastodon 4.3+ credits a linked page's author via its fediverse:creator meta tag here. */
+function mapCardAuthor(raw: unknown): MastodonCardAuthor {
+  const r = isRecord(raw) ? raw : {};
+  return {
+    name: str(r.name),
+    url: str(r.url),
+    account: isRecord(r.account) ? mapAccount(r.account) : null,
+  };
+}
+
+function mapCard(raw: unknown): MastodonCard | null {
+  const r = isRecord(raw) ? raw : {};
+  const url = str(r.url);
+  if (!url) return null;
+  return {
+    url,
+    title: str(r.title),
+    description: str(r.description),
+    image: str(r.image) || null,
+    authors: arr(r.authors).map(mapCardAuthor),
+  };
+}
+
 function mapStatus(raw: unknown, depth = 0): MastodonStatus {
   const r = isRecord(raw) ? raw : {};
   return {
@@ -76,6 +101,7 @@ function mapStatus(raw: unknown, depth = 0): MastodonStatus {
     visibility: str(r.visibility, "public"),
     account: mapAccount(r.account),
     mediaAttachments: arr(r.media_attachments).map(mapMedia),
+    card: isRecord(r.card) ? mapCard(r.card) : null,
     favouritesCount: num(r.favourites_count),
     reblogsCount: num(r.reblogs_count),
     repliesCount: num(r.replies_count),
@@ -288,6 +314,13 @@ class FediPodService {
 
   async isConnected(): Promise<boolean> {
     return (await this.getStatus()).connected;
+  }
+
+  /** Handle to credit as content creator (fediverse:creator) when publishing, if connected. */
+  async creatorHandle(): Promise<string | null> {
+    const status = await this.getStatus();
+    if (!status.connected || !status.account) return null;
+    return status.account.acct || status.account.username || null;
   }
 
   /* -------------------------------- reads -------------------------------- */

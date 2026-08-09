@@ -59,7 +59,9 @@
   "glaze": {
     "capabilities": {
       "ai": {
-        "grades": ["fast"],
+        "grades": [
+          "fast"
+        ],
         "purpose": "Chats with you to help draft and refine posts before sharing them to the Fediverse.",
         "mode": "optional"
       }
@@ -70,6 +72,6 @@
     "host": {
       "minVersion": "0.13.0.0"
     },
-    "updatedAt": 1786287037479
+    "updatedAt": 1786314487659
   }
 }

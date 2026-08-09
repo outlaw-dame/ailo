@@ -41,6 +41,8 @@ export interface Profile {
   githubRepo: string | null;
   /** Connected Solid WebID */
   solidWebId: string | null;
+  /** Credit the connected Fediverse account as content creator (fediverse:creator) on publish */
+  fediverseCreatorEnabled: boolean;
 }
 
 export interface PostsFile {
@@ -73,6 +75,7 @@ export const DEFAULT_PROFILE: Profile = {
   githubLogin: null,
   githubRepo: null,
   solidWebId: null,
+  fediverseCreatorEnabled: true,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -104,6 +107,22 @@ export interface MastodonMediaAttachment {
   description: string | null;
 }
 
+/** An author credited via a linked page's fediverse:creator meta tag. */
+export interface MastodonCardAuthor {
+  name: string;
+  url: string;
+  account: MastodonAccount | null;
+}
+
+/** Link preview card for a shared URL, including fediverse:creator attribution. */
+export interface MastodonCard {
+  url: string;
+  title: string;
+  description: string;
+  image: string | null;
+  authors: MastodonCardAuthor[];
+}
+
 export interface MastodonStatus {
   id: string;
   uri: string;
@@ -116,6 +135,8 @@ export interface MastodonStatus {
   visibility: string;
   account: MastodonAccount;
   mediaAttachments: MastodonMediaAttachment[];
+  /** Link preview for a shared URL, if any (may carry fediverse:creator authors) */
+  card: MastodonCard | null;
   favouritesCount: number;
   reblogsCount: number;
   repliesCount: number;

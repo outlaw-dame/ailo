@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, CalendarDays, Github, Globe2, Link2, Unplug } from "lucide-react";
+import { AtSign, CalendarDays, Copy, Github, Globe2, Link2, Unplug } from "lucide-react";
 import {
   Badge,
   Button,
@@ -9,6 +9,7 @@ import {
   FieldSet,
   Input,
   ScrollArea,
+  Switch,
   Text,
   Textarea,
   toast,
@@ -188,6 +189,14 @@ export function ProfileView() {
     onError: (error: Error) => toast.error(error.message || "Could not disconnect FediPod"),
   });
 
+  const setCreatorAttribution = useMutation({
+    mutationFn: (enabled: boolean) => api.profile.update({ fediverseCreatorEnabled: enabled }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["profile"] });
+    },
+    onError: (error: Error) => toast.error(error.message || "Could not update creator attribution"),
+  });
+
   const calPath = normalizeCalPath(calComPath);
   const calEmbedUrl = calPath ? `https://cal.com/${calPath}?embed=true&theme=auto` : null;
 
@@ -347,6 +356,53 @@ export function ProfileView() {
                   <Unplug />
                   Disconnect
                 </Button>
+              </div>
+
+              <div className="flex flex-col gap-2 rounded-control border border-secondary px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <Text variant="small-strong">Credit me as creator</Text>
+                    <Text variant="mini" color="tertiary">
+                      Adds a fediverse:creator attribution to notes published on GitHub and your
+                      Solid Pod, so Mastodon credits @{fedi.account.acct || fedi.account.username}
+                      when they're shared.
+                    </Text>
+                  </div>
+                  <Switch
+                    checked={profileQuery.data?.fediverseCreatorEnabled ?? true}
+                    disabled={setCreatorAttribution.isPending}
+                    onCheckedChange={(checked) => setCreatorAttribution.mutate(checked)}
+                  />
+                </div>
+                <div className="flex items-center gap-2 rounded-control bg-well/50 px-2.5 py-2">
+                  <Text
+                    variant="mini"
+                    color="tertiary"
+                    className="min-w-0 flex-1 truncate font-mono"
+                    title={`<meta name="fediverse:creator" content="@${fedi.account.acct || fedi.account.username}">`}
+                  >
+                    {`<meta name="fediverse:creator" content="@${fedi.account.acct || fedi.account.username}">`}
+                  </Text>
+                  <Button
+                    size="small"
+                    variant="transparent"
+                    iconOnly
+                    aria-label="Copy meta tag"
+                    onClick={() => {
+                      const tag = `<meta name="fediverse:creator" content="@${fedi.account?.acct || fedi.account?.username}">`;
+                      void navigator.clipboard.writeText(tag).then(
+                        () => toast.success("Copied"),
+                        () => toast.error("Could not copy"),
+                      );
+                    }}
+                  >
+                    <Copy />
+                  </Button>
+                </div>
+                <Text variant="mini" color="quaternary">
+                  Paste this into your published site's HTML head to credit your Fediverse profile
+                  in Mastodon link previews.
+                </Text>
               </div>
             </div>
           ) : (
