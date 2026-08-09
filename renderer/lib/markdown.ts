@@ -1,7 +1,8 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 
-import type { ImageAltText } from "./types";
+import { renderMfm } from "./mfm";
+import type { ImageAltText, MastodonStatus } from "./types";
 
 marked.setOptions({
   gfm: true,
@@ -69,6 +70,15 @@ export function sanitizeHtml(html: string): string {
     USE_PROFILES: { html: true },
     ADD_ATTR: ["target", "rel"],
   });
+}
+
+export function renderFediverseContent(status: MastodonStatus): string {
+  const source = status.source?.content;
+  if (source && status.contentType === "text/x.misskeymarkdown") {
+    return sanitizeHtml(renderMfm(source));
+  }
+  if (source && status.contentType === "text/markdown") return renderMarkdown(source);
+  return sanitizeHtml(status.content);
 }
 
 export function excerptFromBody(body: string, max = 160): string {

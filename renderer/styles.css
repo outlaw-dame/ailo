@@ -41,6 +41,24 @@
   margin-top: 0;
 }
 
+.mfm-center { text-align: center; }
+.mfm-fn { display: inline-block; }
+.mfm-x2 { font-size: 200%; }
+.mfm-x3 { font-size: 300%; }
+.mfm-x4 { font-size: 400%; }
+.mfm-flip { transform: scaleX(-1); }
+.mfm-rainbow { animation: mfm-rainbow 2s linear infinite; }
+.mfm-tada { animation: mfm-tada 1s linear infinite; }
+.mfm-jelly { animation: mfm-jelly 1s linear infinite; }
+.mfm-shake, .mfm-twitch { animation: mfm-shake 0.5s linear infinite; }
+@keyframes mfm-rainbow { to { filter: hue-rotate(360deg); } }
+@keyframes mfm-tada { 50% { transform: scale(1.15) rotate(3deg); } }
+@keyframes mfm-jelly { 50% { transform: scale(1.1, 0.9); } }
+@keyframes mfm-shake { 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+@media (prefers-reduced-motion: reduce) {
+  .mfm-fn { animation: none !important; }
+}
+
 /* Cover mesh backgrounds (no external image) — soft paper-like washes */
 .knot-mesh-0 {
   background:

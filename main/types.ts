@@ -113,6 +113,10 @@ export interface MastodonStatus {
   createdAt: string;
   /** HTML content (sanitize before rendering) */
   content: string;
+  objectType: FediverseObjectType;
+  title: string | null;
+  contentType: FediverseContentType;
+  source: { content: string; mediaType: FediverseContentType } | null;
   /** Content warning */
   spoilerText: string;
   visibility: string;
@@ -126,6 +130,15 @@ export interface MastodonStatus {
   inReplyToId: string | null;
   /** Present when this status boosts another */
   reblog: MastodonStatus | null;
+}
+
+export type FediverseObjectType = "Note" | "Article";
+export type FediverseContentType = "text/plain" | "text/markdown" | "text/x.misskeymarkdown";
+
+export interface FediPodCapabilities {
+  objectTypes: FediverseObjectType[];
+  contentTypes: FediverseContentType[];
+  maxTitleCharacters: number;
 }
 
 export interface MastodonNotification {

@@ -85,6 +85,10 @@ export interface MastodonStatus {
   url: string | null;
   createdAt: string;
   content: string;
+  objectType: FediverseObjectType;
+  title: string | null;
+  contentType: FediverseContentType;
+  source: { content: string; mediaType: FediverseContentType } | null;
   spoilerText: string;
   visibility: string;
   account: MastodonAccount;
@@ -96,6 +100,15 @@ export interface MastodonStatus {
   reblogged: boolean;
   inReplyToId: string | null;
   reblog: MastodonStatus | null;
+}
+
+export type FediverseObjectType = "Note" | "Article";
+export type FediverseContentType = "text/plain" | "text/markdown" | "text/x.misskeymarkdown";
+
+export interface FediPodCapabilities {
+  objectTypes: FediverseObjectType[];
+  contentTypes: FediverseContentType[];
+  maxTitleCharacters: number;
 }
 
 export interface MastodonNotification {

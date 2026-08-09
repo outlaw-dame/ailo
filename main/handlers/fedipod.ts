@@ -2,9 +2,11 @@ import { ipcMain, logger } from "@glaze/core/backend";
 
 import { fediPodService } from "../services/fedipod-service.js";
 import { postsStore } from "../services/posts-store.js";
-import type { FediverseVisibility } from "../types.js";
+import type { FediverseContentType, FediverseObjectType, FediverseVisibility } from "../types.js";
 
 const VISIBILITIES: FediverseVisibility[] = ["public", "unlisted", "private", "direct"];
+const OBJECT_TYPES: FediverseObjectType[] = ["Note", "Article"];
+const CONTENT_TYPES: FediverseContentType[] = ["text/plain", "text/markdown", "text/x.misskeymarkdown"];
 
 function asVisibility(value: unknown): FediverseVisibility {
   return typeof value === "string" && (VISIBILITIES as string[]).includes(value)
@@ -77,6 +79,8 @@ export function registerFediPodHandlers(): void {
     return fediPodService.fetchNotifications();
   });
 
+  ipcMain.handle("fedipod:capabilities", async () => fediPodService.fetchCapabilities());
+
   ipcMain.handle("fedipod:resolveCommunity", async (_event, handle: unknown) => {
     return fediPodService.resolveCommunity(requireString(handle, "Community handle"));
   });
@@ -90,6 +94,13 @@ export function registerFediPodHandlers(): void {
       visibility: asVisibility(data.visibility),
       inReplyToId: typeof data.inReplyToId === "string" ? data.inReplyToId : null,
       community: typeof data.community === "string" ? data.community : null,
+      objectType: OBJECT_TYPES.includes(data.objectType as FediverseObjectType)
+        ? (data.objectType as FediverseObjectType)
+        : "Note",
+      title: typeof data.title === "string" ? data.title : null,
+      contentType: CONTENT_TYPES.includes(data.contentType as FediverseContentType)
+        ? (data.contentType as FediverseContentType)
+        : "text/plain",
     });
   });
 

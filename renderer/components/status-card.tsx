@@ -4,7 +4,7 @@ import { ExternalLink, Heart, Repeat2, Reply, ShieldAlert, UserPlus } from "luci
 import { Badge, Button, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
-import { formatRelativeDate, sanitizeHtml } from "../lib/markdown";
+import { formatRelativeDate, renderFediverseContent } from "../lib/markdown";
 import type { MastodonStatus } from "../lib/types";
 
 export function StatusCard({
@@ -112,9 +112,17 @@ export function StatusCard({
 
       {revealed ? (
         <>
+          {s.objectType === "Article" ? (
+            <div className="flex flex-col gap-1">
+              <Badge color="blue" size="small" className="w-fit">
+                Article
+              </Badge>
+              {s.title ? <h2 className="text-lg font-semibold leading-tight">{s.title}</h2> : null}
+            </div>
+          ) : null}
           <div
-            className="text-primary text-regular leading-relaxed break-words [&_a]:underline [&_a]:decoration-tertiary [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
-            dangerouslySetInnerHTML={{ __html: sanitizeHtml(s.content) }}
+            className="mfm-content text-primary text-regular leading-relaxed break-words [&_a]:underline [&_a]:decoration-tertiary [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
+            dangerouslySetInnerHTML={{ __html: renderFediverseContent(s) }}
           />
           {images.length > 0 ? (
             <div className={`grid gap-2 ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>

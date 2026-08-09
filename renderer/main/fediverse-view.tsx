@@ -19,7 +19,12 @@ import {
 import { StatusCard } from "../components/status-card";
 import { api } from "../lib/api";
 import { formatRelativeDate } from "../lib/markdown";
-import type { FediverseVisibility, MastodonStatus } from "../lib/types";
+import type {
+  FediverseContentType,
+  FediverseObjectType,
+  FediverseVisibility,
+  MastodonStatus,
+} from "../lib/types";
 
 type Tab = "home" | "notifications";
 
@@ -72,6 +77,9 @@ export function FediverseView() {
   const [visibility, setVisibility] = React.useState<FediverseVisibility>("public");
   const [replyTo, setReplyTo] = React.useState<MastodonStatus | null>(null);
   const [community, setCommunity] = React.useState("");
+  const [objectType, setObjectType] = React.useState<FediverseObjectType>("Note");
+  const [contentType, setContentType] = React.useState<FediverseContentType>("text/plain");
+  const [title, setTitle] = React.useState("");
 
   const timelineQuery = useQuery({
     queryKey: ["fedipod", "timeline"],
@@ -83,6 +91,18 @@ export function FediverseView() {
     queryFn: () => api.fedipod.notifications(),
     enabled: connected,
   });
+  const capabilitiesQuery = useQuery({
+    queryKey: ["fedipod", "capabilities"],
+    queryFn: () => api.fedipod.capabilities(),
+    enabled: connected,
+  });
+
+  React.useEffect(() => {
+    const capabilities = capabilitiesQuery.data;
+    if (!capabilities) return;
+    if (!capabilities.objectTypes.includes(objectType)) setObjectType("Note");
+    if (!capabilities.contentTypes.includes(contentType)) setContentType("text/plain");
+  }, [capabilitiesQuery.data, contentType, objectType]);
 
   const post = useMutation({
     mutationFn: () =>
@@ -92,6 +112,9 @@ export function FediverseView() {
         visibility,
         inReplyToId: replyTo?.id ?? null,
         community: replyTo ? null : community.trim() || null,
+        objectType: replyTo ? "Note" : objectType,
+        title: !replyTo && objectType === "Article" ? title.trim() : null,
+        contentType: replyTo ? "text/plain" : contentType,
       }),
     onSuccess: async () => {
       setText("");
@@ -99,6 +122,7 @@ export function FediverseView() {
       setCwEnabled(false);
       setReplyTo(null);
       setCommunity("");
+      setTitle("");
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] });
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "notifications"] });
       toast.success("Posted to the Fediverse");
@@ -139,6 +163,9 @@ export function FediverseView() {
   const account = statusQuery.data?.account;
   const timeline = timelineQuery.data ?? [];
   const notifications = notificationsQuery.data ?? [];
+  const capabilities = capabilitiesQuery.data;
+  const articleSupported = Boolean(capabilities?.objectTypes.includes("Article"));
+  const availableContentTypes = capabilities?.contentTypes ?? ["text/plain"];
 
   return (
     <ScrollArea
@@ -185,6 +212,44 @@ export function FediverseView() {
                 <X />
               </Button>
             </div>
+          ) : null}
+          {!replyTo && articleSupported ? (
+            <SegmentedControl
+              size="small"
+              value={objectType}
+              onValueChange={(value) => setObjectType(value as FediverseObjectType)}
+              aria-label="Publication type"
+            >
+              <SegmentedControlItem value="Note">Note</SegmentedControlItem>
+              <SegmentedControlItem value="Article">Article</SegmentedControlItem>
+            </SegmentedControl>
+          ) : null}
+          {!replyTo && objectType === "Article" ? (
+            <Input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Article title"
+              aria-label="Article title"
+              maxLength={capabilities?.maxTitleCharacters ?? 300}
+            />
+          ) : null}
+          {!replyTo && availableContentTypes.length > 1 ? (
+            <SegmentedControl
+              size="small"
+              value={contentType}
+              onValueChange={(value) => setContentType(value as FediverseContentType)}
+              aria-label="Content format"
+            >
+              {availableContentTypes.includes("text/plain") ? (
+                <SegmentedControlItem value="text/plain">Plain</SegmentedControlItem>
+              ) : null}
+              {availableContentTypes.includes("text/markdown") ? (
+                <SegmentedControlItem value="text/markdown">Markdown</SegmentedControlItem>
+              ) : null}
+              {availableContentTypes.includes("text/x.misskeymarkdown") ? (
+                <SegmentedControlItem value="text/x.misskeymarkdown">MFM</SegmentedControlItem>
+              ) : null}
+            </SegmentedControl>
           ) : null}
           {cwEnabled ? (
             <Input
@@ -248,7 +313,7 @@ export function FediverseView() {
               size="small"
               variant="accent"
               className="ml-auto"
-              disabled={post.isPending || !text.trim()}
+              disabled={post.isPending || !text.trim() || (objectType === "Article" && !title.trim())}
               onClick={() => post.mutate()}
             >
               <Send />

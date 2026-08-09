@@ -1,6 +1,9 @@
 import type {
   FediPodLoginResult,
+  FediPodCapabilities,
   FediPodStatus,
+  FediverseContentType,
+  FediverseObjectType,
   FediverseVisibility,
   GitHubRepoSummary,
   GitHubStatus,
@@ -76,6 +79,7 @@ export const api = {
     timeline: (options?: { maxId?: string; limit?: number }) =>
       ipc().invoke("fedipod:timeline", options ?? {}) as Promise<MastodonStatus[]>,
     notifications: () => ipc().invoke("fedipod:notifications") as Promise<MastodonNotification[]>,
+    capabilities: () => ipc().invoke("fedipod:capabilities") as Promise<FediPodCapabilities>,
     resolveCommunity: (handle: string) =>
       ipc().invoke("fedipod:resolveCommunity", handle) as Promise<MastodonAccount>,
     post: (input: {
@@ -84,6 +88,9 @@ export const api = {
       visibility?: FediverseVisibility;
       inReplyToId?: string | null;
       community?: string | null;
+      objectType?: FediverseObjectType;
+      title?: string | null;
+      contentType?: FediverseContentType;
     }) => ipc().invoke("fedipod:post", input) as Promise<MastodonStatus>,
     favourite: (id: string, active: boolean) =>
       ipc().invoke("fedipod:favourite", id, active) as Promise<MastodonStatus>,

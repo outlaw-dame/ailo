@@ -5,9 +5,12 @@ import { app, logger, safeStorage } from "@glaze/core/backend";
 
 import type {
   FediPodConfig,
+  FediPodCapabilities,
   FediPodLoginResult,
   FediPodStatus,
   FediverseVisibility,
+  FediverseContentType,
+  FediverseObjectType,
   MastodonAccount,
   MastodonMediaAttachment,
   MastodonNotification,
@@ -41,6 +44,20 @@ function bool(value: unknown): boolean {
 function arr(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
+const OBJECT_TYPES: FediverseObjectType[] = ["Note", "Article"];
+const CONTENT_TYPES: FediverseContentType[] = [
+  "text/plain",
+  "text/markdown",
+  "text/x.misskeymarkdown",
+];
+function objectType(value: unknown): FediverseObjectType {
+  return OBJECT_TYPES.includes(value as FediverseObjectType) ? (value as FediverseObjectType) : "Note";
+}
+function contentType(value: unknown): FediverseContentType {
+  return CONTENT_TYPES.includes(value as FediverseContentType)
+    ? (value as FediverseContentType)
+    : "text/plain";
+}
 
 /* ------------------------------- mappers ---------------------------------- */
 
@@ -73,12 +90,21 @@ function mapMedia(raw: unknown): MastodonMediaAttachment {
 
 function mapStatus(raw: unknown, depth = 0): MastodonStatus {
   const r = isRecord(raw) ? raw : {};
+  const sourceRaw = isRecord(r.source) ? r.source : null;
+  const mappedContentType = contentType(r.content_type ?? sourceRaw?.mediaType);
   return {
     id: str(r.id),
     uri: str(r.uri),
     url: str(r.url) || null,
     createdAt: str(r.created_at),
     content: str(r.content),
+    objectType: objectType(r.object_type),
+    title: typeof r.title === "string" && r.title.trim() ? r.title.trim() : null,
+    contentType: mappedContentType,
+    source:
+      sourceRaw && typeof sourceRaw.content === "string"
+        ? { content: sourceRaw.content, mediaType: contentType(sourceRaw.mediaType) }
+        : null,
     spoilerText: str(r.spoiler_text),
     visibility: str(r.visibility, "public"),
     account: mapAccount(r.account),
@@ -112,23 +138,6 @@ function normalizeBaseUrl(input: string): string {
     throw new Error("FediPod URL must start with http:// or https://");
   }
   return trimmed;
-}
-
-/** Convert a Markdown/HTML story body to a compact plaintext excerpt. */
-function toPlainText(body: string, max = 360): string {
-  const plain = body
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`[^`]*`/g, " ")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/^[#>*_~-]+\s?/gm, "")
-    .replace(/[*_~`]+/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]+/g, " ")
-    .trim();
-  if (plain.length <= max) return plain;
-  return `${plain.slice(0, max - 1).trimEnd()}…`;
 }
 
 function httpImageSources(post: Post): Array<{ src: string; alt: string }> {
@@ -378,6 +387,21 @@ class FediPodService {
     return arr(raw).map(mapNotification);
   }
 
+  async fetchCapabilities(): Promise<FediPodCapabilities> {
+    const raw = await this.authed("/api/v2/instance");
+    const config = isRecord(raw) && isRecord(raw.configuration) ? raw.configuration : {};
+    const statuses = isRecord(config.statuses) ? config.statuses : {};
+    return {
+      objectTypes: arr(statuses.supported_object_types).filter(
+        (value): value is FediverseObjectType => OBJECT_TYPES.includes(value as FediverseObjectType),
+      ),
+      contentTypes: arr(statuses.supported_content_types).filter(
+        (value): value is FediverseContentType => CONTENT_TYPES.includes(value as FediverseContentType),
+      ),
+      maxTitleCharacters: Math.min(300, Math.max(1, num(statuses.max_title_characters, 300))),
+    };
+  }
+
   async resolveCommunity(handleInput: string): Promise<MastodonAccount> {
     const handle = normalizeCommunityHandle(handleInput);
     const params = new URLSearchParams({ q: handle, limit: "20" });
@@ -395,6 +419,9 @@ class FediPodService {
     inReplyToId?: string | null;
     mediaIds?: string[];
     community?: string | null;
+    objectType?: FediverseObjectType;
+    title?: string | null;
+    contentType?: FediverseContentType;
   }): Promise<MastodonStatus> {
     let status = input.status.trim();
     if (input.community) {
@@ -407,7 +434,10 @@ class FediPodService {
     const body: Record<string, unknown> = {
       status,
       visibility: input.visibility ?? "public",
+      object_type: input.objectType ?? "Note",
+      content_type: input.contentType ?? "text/plain",
     };
+    if (input.title) body.title = input.title.trim();
     if (input.spoilerText) body.spoiler_text = input.spoilerText;
     if (input.inReplyToId) body.in_reply_to_id = input.inReplyToId;
     if (input.mediaIds && input.mediaIds.length > 0) body.media_ids = input.mediaIds;
@@ -470,16 +500,16 @@ class FediPodService {
     post: Post,
     visibility: FediverseVisibility = "public",
   ): Promise<{ id: string; url: string | null }> {
-    const excerpt = toPlainText(post.body);
-    const link = post.solidUrl ?? "";
+    const capabilities = await this.fetchCapabilities();
+    if (!capabilities.objectTypes.includes("Article") || !capabilities.contentTypes.includes("text/markdown")) {
+      throw new Error("This FediPod does not advertise ActivityPub Article with Markdown support.");
+    }
+    const link = post.solidUrl ? `\n\n[Original story](${post.solidUrl})` : "";
     const hashtags = post.tags
       .map((tag) => `#${tag.replace(/[^a-z0-9]+/gi, "")}`)
       .filter((tag) => tag.length > 1)
       .join(" ");
-
-    const parts = [post.title.trim(), excerpt, link, hashtags].filter(Boolean);
-    let statusText = parts.join("\n\n");
-    if (statusText.length > 480) statusText = `${statusText.slice(0, 479).trimEnd()}…`;
+    const statusText = `${post.body.trim()}${link}${hashtags ? `\n\n${hashtags}` : ""}`;
 
     const mediaIds: string[] = [];
     for (const image of httpImageSources(post)) {
@@ -492,6 +522,9 @@ class FediPodService {
       spoilerText: post.contentWarning,
       visibility,
       mediaIds,
+      objectType: "Article",
+      title: post.title.trim(),
+      contentType: "text/markdown",
     });
     return { id: status.id, url: status.url };
   }
