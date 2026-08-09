@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AtSign, Bell, Home, RefreshCw, Send, Users, X } from "lucide-react";
+import { AtSign, Bell, Home, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
 import {
   Button,
   EmptyState,
@@ -17,6 +17,7 @@ import {
 } from "@glaze/core/components";
 
 import { StatusCard } from "../components/status-card";
+import { FediverseModeration } from "../components/fediverse-moderation";
 import { api } from "../lib/api";
 import { formatRelativeDate } from "../lib/markdown";
 import type {
@@ -26,7 +27,7 @@ import type {
   MastodonStatus,
 } from "../lib/types";
 
-type Tab = "home" | "notifications";
+type Tab = "home" | "notifications" | "moderation";
 
 const NOTIFICATION_LABEL: Record<string, string> = {
   mention: "mentioned you",
@@ -132,6 +133,14 @@ export function FediverseView() {
   });
 
   const refresh = () => {
+    if (tab === "moderation") {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["fedipod", "blocks"] }),
+        queryClient.invalidateQueries({ queryKey: ["fedipod", "mutes"] }),
+        queryClient.invalidateQueries({ queryKey: ["fedipod", "filters"] }),
+      ]);
+      return;
+    }
     void queryClient.invalidateQueries({
       queryKey: ["fedipod", tab === "home" ? "timeline" : "notifications"],
     });
@@ -188,6 +197,10 @@ export function FediverseView() {
               <Bell />
               Alerts
             </SegmentedControlItem>
+            <SegmentedControlItem value="moderation">
+              <ShieldCheck />
+              Safety
+            </SegmentedControlItem>
           </SegmentedControl>
           <Button size="small" variant="filled" iconOnly aria-label="Refresh" onClick={refresh}>
             <RefreshCw />
@@ -197,7 +210,8 @@ export function FediverseView() {
       className="h-full"
     >
       <div className="flex max-w-2xl flex-col gap-5 px-6 py-4">
-        <div className="flex flex-col gap-3 rounded-card border border-secondary bg-well/40 px-4 py-3.5">
+        {tab !== "moderation" ? (
+          <div className="flex flex-col gap-3 rounded-card border border-secondary bg-well/40 px-4 py-3.5">
           {replyTo ? (
             <div className="flex items-center gap-2">
               <Text variant="small" color="tertiary" truncate className="min-w-0 flex-1">
@@ -326,7 +340,8 @@ export function FediverseView() {
               {replyTo ? "Reply" : community.trim() ? "Post to community" : "Post"}
             </Button>
           </div>
-        </div>
+          </div>
+        ) : null}
 
         {tab === "home" ? (
           timelineQuery.isLoading ? (
@@ -344,40 +359,44 @@ export function FediverseView() {
               ))}
             </div>
           )
-        ) : notificationsQuery.isLoading ? (
-          <FeedSkeleton />
-        ) : notificationsQuery.isError ? (
-          <ErrorNote message={(notificationsQuery.error as Error).message} onRetry={refresh} />
-        ) : notifications.length === 0 ? (
-          <Text color="tertiary" className="px-1 py-8 text-center">
-            No notifications yet.
-          </Text>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {notifications.map((n) => (
-              <div key={n.id} className="flex flex-col gap-2">
-                <div className="flex min-w-0 items-center gap-2 px-1">
-                  <img
-                    src={n.account.avatar}
-                    alt=""
-                    className="size-6 shrink-0 rounded-full bg-control-subtle object-cover"
-                  />
-                  <Text variant="small" truncate className="min-w-0 flex-1">
-                    <Text as="span" variant="small-strong">
-                      {n.account.displayName}
-                    </Text>{" "}
-                    <Text as="span" color="tertiary">
-                      {NOTIFICATION_LABEL[n.type] ?? n.type}
+        ) : tab === "notifications" ? (
+          notificationsQuery.isLoading ? (
+            <FeedSkeleton />
+          ) : notificationsQuery.isError ? (
+            <ErrorNote message={(notificationsQuery.error as Error).message} onRetry={refresh} />
+          ) : notifications.length === 0 ? (
+            <Text color="tertiary" className="px-1 py-8 text-center">
+              No notifications yet.
+            </Text>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {notifications.map((n) => (
+                <div key={n.id} className="flex flex-col gap-2">
+                  <div className="flex min-w-0 items-center gap-2 px-1">
+                    <img
+                      src={n.account.avatar}
+                      alt=""
+                      className="size-6 shrink-0 rounded-full bg-control-subtle object-cover"
+                    />
+                    <Text variant="small" truncate className="min-w-0 flex-1">
+                      <Text as="span" variant="small-strong">
+                        {n.account.displayName}
+                      </Text>{" "}
+                      <Text as="span" color="tertiary">
+                        {NOTIFICATION_LABEL[n.type] ?? n.type}
+                      </Text>
                     </Text>
-                  </Text>
-                  <Text variant="mini" color="quaternary" className="shrink-0 tabular-nums">
-                    {formatRelativeDate(n.createdAt)}
-                  </Text>
+                    <Text variant="mini" color="quaternary" className="shrink-0 tabular-nums">
+                      {formatRelativeDate(n.createdAt)}
+                    </Text>
+                  </div>
+                  {n.status ? <StatusCard status={n.status} onReply={setReplyTo} /> : null}
                 </div>
-                {n.status ? <StatusCard status={n.status} onReply={setReplyTo} /> : null}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )
+        ) : (
+          <FediverseModeration />
         )}
       </div>
     </ScrollArea>

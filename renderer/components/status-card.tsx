@@ -1,9 +1,10 @@
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Heart, Repeat2, Reply, ShieldAlert, UserPlus } from "lucide-react";
+import { Ban, ExternalLink, Heart, Repeat2, Reply, ShieldAlert, UserPlus, VolumeX } from "lucide-react";
 import { Badge, Button, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
+import { moderationFor } from "../lib/fediverse-moderation";
 import { formatRelativeDate, renderFediverseContent } from "../lib/markdown";
 import type { MastodonStatus } from "../lib/types";
 
@@ -19,6 +20,12 @@ export function StatusCard({
   const s = status.reblog ?? status;
   const followTarget = booster?.group ? booster : s.account;
   const [revealed, setRevealed] = React.useState(!s.spoilerText);
+  const filterModeration = moderationFor(s.filtered);
+  const hiddenByFilter = filterModeration.hidden;
+  const filterWarnings = filterModeration.warnings;
+  const [filterRevealed, setFilterRevealed] = React.useState(filterWarnings.length === 0);
+  const filterKey = filterWarnings.map((result) => result.filter.id).join(",");
+  React.useEffect(() => setFilterRevealed(!filterKey), [filterKey]);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] });
@@ -45,8 +52,28 @@ export function StatusCard({
       ),
     onError: (e: Error) => toast.error(e.message),
   });
+  const mute = useMutation({
+    mutationFn: () => api.fedipod.mute(s.account.id, true),
+    onSuccess: () => {
+      invalidate();
+      void queryClient.invalidateQueries({ queryKey: ["fedipod", "mutes"] });
+      toast.success(`Muted @${s.account.acct || s.account.username}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const block = useMutation({
+    mutationFn: () => api.fedipod.block(s.account.id, true),
+    onSuccess: () => {
+      invalidate();
+      void queryClient.invalidateQueries({ queryKey: ["fedipod", "blocks"] });
+      toast.success(`Blocked @${s.account.acct || s.account.username}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const images = s.mediaAttachments.filter((m) => m.type === "image" || m.type === "gifv");
+
+  if (hiddenByFilter) return null;
 
   return (
     <article className="rounded-card border border-secondary bg-well/30 px-4 py-3.5 flex flex-col gap-2.5">
@@ -110,7 +137,19 @@ export function StatusCard({
         </div>
       ) : null}
 
-      {revealed ? (
+      {filterWarnings.length ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-control border border-dashed border-secondary px-3 py-2">
+          <ShieldAlert className="size-4 shrink-0 text-tertiary" />
+          <Text variant="small" className="min-w-0 flex-1">
+            Filtered: {[...new Set(filterWarnings.map((result) => result.filter.title))].join(", ")}
+          </Text>
+          <Button size="small" variant="filled" onClick={() => setFilterRevealed((value) => !value)}>
+            {filterRevealed ? "Hide" : "Show"}
+          </Button>
+        </div>
+      ) : null}
+
+      {revealed && filterRevealed ? (
         <>
           {s.objectType === "Article" ? (
             <div className="flex flex-col gap-1">
@@ -165,6 +204,26 @@ export function StatusCard({
         >
           <Heart />
           <span className="tabular-nums">{s.favouritesCount || ""}</span>
+        </Button>
+        <Button
+          size="small"
+          variant="transparent"
+          disabled={mute.isPending}
+          onClick={() => mute.mutate()}
+        >
+          <VolumeX />
+          Mute
+        </Button>
+        <Button
+          size="small"
+          variant="transparent"
+          disabled={block.isPending}
+          onClick={() => {
+            if (window.confirm(`Block @${s.account.acct || s.account.username}?`)) block.mutate();
+          }}
+        >
+          <Ban />
+          Block
         </Button>
         {s.url ? (
           <Button

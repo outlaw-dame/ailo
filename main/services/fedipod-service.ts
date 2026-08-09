@@ -13,7 +13,10 @@ import type {
   FediverseObjectType,
   MastodonAccount,
   MastodonMediaAttachment,
+  MastodonFilter,
+  MastodonFilterResult,
   MastodonNotification,
+  MastodonRelationship,
   MastodonStatus,
   Post,
 } from "../types.js";
@@ -87,6 +90,45 @@ function mapMedia(raw: unknown): MastodonMediaAttachment {
   };
 }
 
+function mapFilter(raw: unknown): MastodonFilter {
+  const r = isRecord(raw) ? raw : {};
+  const action = str(r.filter_action, "warn");
+  return {
+    id: str(r.id),
+    title: str(r.title),
+    context: arr(r.context).map((value) => str(value)).filter(Boolean),
+    expiresAt: typeof r.expires_at === "string" ? r.expires_at : null,
+    action: action === "hide" || action === "blur" ? action : "warn",
+    keywords: arr(r.keywords).map((value) => {
+      const keyword = isRecord(value) ? value : {};
+      return {
+        id: str(keyword.id),
+        keyword: str(keyword.keyword),
+        wholeWord: bool(keyword.whole_word),
+      };
+    }),
+  };
+}
+
+function mapFilterResult(raw: unknown): MastodonFilterResult | null {
+  const r = isRecord(raw) ? raw : {};
+  if (!isRecord(r.filter)) return null;
+  return {
+    filter: mapFilter(r.filter),
+    keywordMatches: arr(r.keyword_matches).map((value) => str(value)).filter(Boolean),
+  };
+}
+
+function mapRelationship(raw: unknown): MastodonRelationship {
+  const r = isRecord(raw) ? raw : {};
+  return {
+    id: str(r.id),
+    blocking: bool(r.blocking),
+    muting: bool(r.muting),
+    mutingNotifications: bool(r.muting_notifications),
+  };
+}
+
 function mapStatus(raw: unknown, depth = 0): MastodonStatus {
   const r = isRecord(raw) ? raw : {};
   const sourceRaw = isRecord(r.source) ? r.source : null;
@@ -104,6 +146,9 @@ function mapStatus(raw: unknown, depth = 0): MastodonStatus {
       sourceRaw && typeof sourceRaw.content === "string"
         ? { content: sourceRaw.content, mediaType: contentType(sourceRaw.mediaType) }
         : null,
+    filtered: arr(r.filtered)
+      .map(mapFilterResult)
+      .filter((value): value is MastodonFilterResult => value !== null),
     spoilerText: str(r.spoiler_text),
     visibility: str(r.visibility, "public"),
     account: mapAccount(r.account),
@@ -386,6 +431,44 @@ class FediPodService {
     return arr(raw).map(mapNotification);
   }
 
+  async fetchBlockedAccounts(): Promise<MastodonAccount[]> {
+    return arr(await this.authed("/api/v1/blocks")).map(mapAccount);
+  }
+
+  async fetchMutedAccounts(): Promise<MastodonAccount[]> {
+    return arr(await this.authed("/api/v1/mutes")).map(mapAccount);
+  }
+
+  async fetchFilters(): Promise<MastodonFilter[]> {
+    return arr(await this.authed("/api/v2/filters")).map(mapFilter);
+  }
+
+  async createFilter(input: {
+    title: string;
+    keyword: string;
+    wholeWord?: boolean;
+    action?: "warn" | "hide";
+  }): Promise<MastodonFilter> {
+    const raw = await this.authed("/api/v2/filters", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: input.title.trim(),
+        context: ["home", "notifications", "public", "thread"],
+        filter_action: input.action ?? "warn",
+        keywords_attributes: [{
+          keyword: input.keyword.trim(),
+          whole_word: input.wholeWord ?? false,
+        }],
+      }),
+    });
+    return mapFilter(raw);
+  }
+
+  async deleteFilter(id: string): Promise<void> {
+    await this.authed(`/api/v2/filters/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
   async fetchCapabilities(): Promise<FediPodCapabilities> {
     const raw = await this.authed("/api/v2/instance");
     const config = isRecord(raw) && isRecord(raw.configuration) ? raw.configuration : {};
@@ -475,6 +558,20 @@ class FediPodService {
     );
     const r = isRecord(raw) ? raw : {};
     return { following: bool(r.following) };
+  }
+
+  async setBlock(id: string, active: boolean): Promise<MastodonRelationship> {
+    return mapRelationship(await this.authed(
+      `/api/v1/accounts/${encodeURIComponent(id)}/${active ? "block" : "unblock"}`,
+      { method: "POST" },
+    ));
+  }
+
+  async setMute(id: string, active: boolean): Promise<MastodonRelationship> {
+    return mapRelationship(await this.authed(
+      `/api/v1/accounts/${encodeURIComponent(id)}/${active ? "mute" : "unmute"}`,
+      { method: "POST" },
+    ));
   }
 
   /** Fetch a remote image and upload it as a media attachment with alt text. */

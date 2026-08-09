@@ -79,6 +79,34 @@ export function registerFediPodHandlers(): void {
     return fediPodService.fetchNotifications();
   });
 
+  ipcMain.handle("fedipod:blocks", async () => fediPodService.fetchBlockedAccounts());
+  ipcMain.handle("fedipod:mutes", async () => fediPodService.fetchMutedAccounts());
+  ipcMain.handle("fedipod:filters", async () => fediPodService.fetchFilters());
+
+  ipcMain.handle("fedipod:block", async (_event, id: unknown, active: unknown) => {
+    return fediPodService.setBlock(requireString(id, "Account id"), active !== false);
+  });
+
+  ipcMain.handle("fedipod:mute", async (_event, id: unknown, active: unknown) => {
+    return fediPodService.setMute(requireString(id, "Account id"), active !== false);
+  });
+
+  ipcMain.handle("fedipod:createFilter", async (_event, input: unknown) => {
+    const data = typeof input === "object" && input !== null
+      ? (input as Record<string, unknown>) : {};
+    return fediPodService.createFilter({
+      title: requireString(data.title, "Filter title"),
+      keyword: requireString(data.keyword, "Filter keyword"),
+      wholeWord: data.wholeWord === true,
+      action: data.action === "hide" ? "hide" : "warn",
+    });
+  });
+
+  ipcMain.handle("fedipod:deleteFilter", async (_event, id: unknown) => {
+    await fediPodService.deleteFilter(requireString(id, "Filter id"));
+    return { ok: true };
+  });
+
   ipcMain.handle("fedipod:capabilities", async () => fediPodService.fetchCapabilities());
 
   ipcMain.handle("fedipod:resolveCommunity", async (_event, handle: unknown) => {

@@ -89,6 +89,7 @@ export interface MastodonStatus {
   title: string | null;
   contentType: FediverseContentType;
   source: { content: string; mediaType: FediverseContentType } | null;
+  filtered: MastodonFilterResult[];
   spoilerText: string;
   visibility: string;
   account: MastodonAccount;
@@ -100,6 +101,33 @@ export interface MastodonStatus {
   reblogged: boolean;
   inReplyToId: string | null;
   reblog: MastodonStatus | null;
+}
+
+export interface MastodonRelationship {
+  id: string;
+  blocking: boolean;
+  muting: boolean;
+  mutingNotifications: boolean;
+}
+
+export interface MastodonFilterKeyword {
+  id: string;
+  keyword: string;
+  wholeWord: boolean;
+}
+
+export interface MastodonFilter {
+  id: string;
+  title: string;
+  context: string[];
+  expiresAt: string | null;
+  action: "warn" | "hide" | "blur";
+  keywords: MastodonFilterKeyword[];
+}
+
+export interface MastodonFilterResult {
+  filter: MastodonFilter;
+  keywordMatches: string[];
 }
 
 export type FediverseObjectType = "Note" | "Article";
