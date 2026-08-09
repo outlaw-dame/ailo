@@ -35,18 +35,3 @@ export function requireExactGroup<T extends { acct: string; group: boolean }>(
   }
   return exact;
 }
-
-/**
- * Put the Group mention before every other mention, as Lemmy requires. Both
- * Lemmy and PieFed strip this routing mention when rendering the community post.
- */
-export function addressPostToCommunity(status: string, canonicalAcct: string): string {
-  const text = status.trim();
-  const mention = `@${normalizeCommunityHandle(canonicalAcct)}`;
-  const escaped = mention.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const withoutDuplicate = text
-    .replace(new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, "gi"), "$1")
-    .replace(/ {2,}/g, " ")
-    .trim();
-  return `${mention} ${withoutDuplicate}`;
-}

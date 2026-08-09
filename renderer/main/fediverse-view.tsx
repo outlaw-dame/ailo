@@ -102,6 +102,7 @@ export function FediverseView() {
     if (!capabilities) return;
     if (!capabilities.objectTypes.includes(objectType)) setObjectType("Note");
     if (!capabilities.contentTypes.includes(contentType)) setContentType("text/plain");
+    if (!capabilities.supportsCommunityTargeting) setCommunity("");
   }, [capabilitiesQuery.data, contentType, objectType]);
 
   const post = useMutation({
@@ -220,7 +221,9 @@ export function FediverseView() {
               onValueChange={(value) => setObjectType(value as FediverseObjectType)}
               aria-label="Publication type"
             >
-              <SegmentedControlItem value="Note">Note</SegmentedControlItem>
+              <SegmentedControlItem value="Note" disabled={Boolean(community.trim())}>
+                Note
+              </SegmentedControlItem>
               <SegmentedControlItem value="Article">Article</SegmentedControlItem>
             </SegmentedControl>
           ) : null}
@@ -258,7 +261,7 @@ export function FediverseView() {
               placeholder="Content warning"
             />
           ) : null}
-          {!replyTo ? (
+          {!replyTo && capabilities?.supportsCommunityTargeting ? (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
                 <Users className="size-4 shrink-0 text-tertiary" />
@@ -266,7 +269,10 @@ export function FediverseView() {
                   value={community}
                   onChange={(event) => {
                     setCommunity(event.target.value);
-                    if (event.target.value.trim()) setVisibility("public");
+                    if (event.target.value.trim()) {
+                      setVisibility("public");
+                      setObjectType("Article");
+                    }
                   }}
                   placeholder="Optional community, e.g. !technology@lemmy.world"
                   aria-label="Community handle"
@@ -274,8 +280,8 @@ export function FediverseView() {
               </div>
               {community.trim() ? (
                 <Text variant="mini" color="tertiary" className="pl-6">
-                  The first line becomes the Lemmy/PieFed title. Ailo verifies this is a Group and
-                  sends the post publicly.
+                  Ailo verifies this is a Group. FediPod publishes the Article with the community
+                  as its ActivityPub audience and delivers it publicly to the Group inbox.
                 </Text>
               ) : null}
             </div>

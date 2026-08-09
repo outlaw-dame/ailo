@@ -19,7 +19,6 @@ import type {
 } from "../types.js";
 import { DEFAULT_FEDIPOD_CONFIG } from "../types.js";
 import {
-  addressPostToCommunity,
   normalizeCommunityHandle,
   requireExactGroup,
 } from "./fedipod-groups.js";
@@ -399,6 +398,7 @@ class FediPodService {
         (value): value is FediverseContentType => CONTENT_TYPES.includes(value as FediverseContentType),
       ),
       maxTitleCharacters: Math.min(300, Math.max(1, num(statuses.max_title_characters, 300))),
+      supportsCommunityTargeting: bool(statuses.community_targeting),
     };
   }
 
@@ -423,13 +423,13 @@ class FediPodService {
     title?: string | null;
     contentType?: FediverseContentType;
   }): Promise<MastodonStatus> {
-    let status = input.status.trim();
+    const status = input.status.trim();
+    let community: MastodonAccount | null = null;
     if (input.community) {
       if ((input.visibility ?? "public") !== "public") {
         throw new Error("Community posts must be public so the group can distribute them.");
       }
-      const community = await this.resolveCommunity(input.community);
-      status = addressPostToCommunity(status, community.acct);
+      community = await this.resolveCommunity(input.community);
     }
     const body: Record<string, unknown> = {
       status,
@@ -438,6 +438,7 @@ class FediPodService {
       content_type: input.contentType ?? "text/plain",
     };
     if (input.title) body.title = input.title.trim();
+    if (community) body.community = community.acct;
     if (input.spoilerText) body.spoiler_text = input.spoilerText;
     if (input.inReplyToId) body.in_reply_to_id = input.inReplyToId;
     if (input.mediaIds && input.mediaIds.length > 0) body.media_ids = input.mediaIds;

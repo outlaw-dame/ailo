@@ -109,6 +109,7 @@ export interface FediPodCapabilities {
   objectTypes: FediverseObjectType[];
   contentTypes: FediverseContentType[];
   maxTitleCharacters: number;
+  supportsCommunityTargeting: boolean;
 }
 
 export interface MastodonNotification {

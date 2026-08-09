@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  addressPostToCommunity,
   normalizeCommunityHandle,
   requireExactGroup,
 } from "./fedipod-groups.js";
@@ -16,17 +15,6 @@ test("rejects incomplete handles and URL-shaped input", () => {
   for (const value of ["technology", "!technology@", "https://lemmy.world/c/technology", "a@b@c"]) {
     assert.throws(() => normalizeCommunityHandle(value), /full community handle/);
   }
-});
-
-test("puts one canonical Group mention first", () => {
-  assert.equal(
-    addressPostToCommunity("A useful title\n\nHello @friend@example.net", "group@piefed.social"),
-    "@group@piefed.social A useful title\n\nHello @friend@example.net",
-  );
-  assert.equal(
-    addressPostToCommunity("Already @GROUP@PIEFED.SOCIAL addressed", "group@piefed.social"),
-    "@group@piefed.social Already addressed",
-  );
 });
 
 test("accepts only an exact ActivityPub Group match", () => {
