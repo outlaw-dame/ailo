@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Heart, Repeat2, Reply, ShieldAlert, UserPlus } from "lucide-react";
-import { Button, Text, toast } from "@glaze/core/components";
+import { Badge, Button, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
 import { formatRelativeDate, sanitizeHtml } from "../lib/markdown";
@@ -17,6 +17,7 @@ export function StatusCard({
   const queryClient = useQueryClient();
   const booster = status.reblog ? status.account : null;
   const s = status.reblog ?? status;
+  const followTarget = booster?.group ? booster : s.account;
   const [revealed, setRevealed] = React.useState(!s.spoilerText);
 
   const invalidate = () => {
@@ -35,8 +36,13 @@ export function StatusCard({
     onError: (e: Error) => toast.error(e.message),
   });
   const follow = useMutation({
-    mutationFn: () => api.fedipod.follow(s.account.id, true),
-    onSuccess: () => toast.success(`Following @${s.account.acct || s.account.username}`),
+    mutationFn: () => api.fedipod.follow(followTarget.id, true),
+    onSuccess: () =>
+      toast.success(
+        followTarget.group
+          ? `Joined !${followTarget.acct || followTarget.username}`
+          : `Following @${followTarget.acct || followTarget.username}`,
+      ),
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -48,7 +54,9 @@ export function StatusCard({
         <div className="flex items-center gap-1.5 text-tertiary">
           <Repeat2 className="size-3.5 shrink-0" />
           <Text variant="mini" color="tertiary" truncate>
-            {booster.displayName} boosted
+            {booster.group
+              ? `Shared to !${booster.acct || booster.username}`
+              : `${booster.displayName} boosted`}
           </Text>
         </div>
       ) : null}
@@ -69,14 +77,20 @@ export function StatusCard({
             </Text>
           </div>
           <Text variant="small" color="tertiary" truncate className="min-w-0">
-            @{s.account.acct || s.account.username}
+            {s.account.group ? "!" : "@"}
+            {s.account.acct || s.account.username}
           </Text>
+          {s.account.group ? (
+            <Badge color="blue" size="small" className="mt-1 w-fit">
+              Community
+            </Badge>
+          ) : null}
         </div>
         <Button
           size="small"
           variant="transparent"
           iconOnly
-          aria-label={`Follow ${s.account.displayName}`}
+          aria-label={`${followTarget.group ? "Join" : "Follow"} ${followTarget.displayName}`}
           disabled={follow.isPending}
           onClick={() => follow.mutate()}
         >

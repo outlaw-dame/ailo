@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AtSign, Bell, Home, RefreshCw, Send, X } from "lucide-react";
+import { AtSign, Bell, Home, RefreshCw, Send, Users, X } from "lucide-react";
 import {
   Button,
   EmptyState,
@@ -71,6 +71,7 @@ export function FediverseView() {
   const [cw, setCw] = React.useState("");
   const [visibility, setVisibility] = React.useState<FediverseVisibility>("public");
   const [replyTo, setReplyTo] = React.useState<MastodonStatus | null>(null);
+  const [community, setCommunity] = React.useState("");
 
   const timelineQuery = useQuery({
     queryKey: ["fedipod", "timeline"],
@@ -90,12 +91,14 @@ export function FediverseView() {
         spoilerText: cwEnabled ? cw.trim() || "Sensitive content" : null,
         visibility,
         inReplyToId: replyTo?.id ?? null,
+        community: replyTo ? null : community.trim() || null,
       }),
     onSuccess: async () => {
       setText("");
       setCw("");
       setCwEnabled(false);
       setReplyTo(null);
+      setCommunity("");
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] });
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "notifications"] });
       toast.success("Posted to the Fediverse");
@@ -190,6 +193,28 @@ export function FediverseView() {
               placeholder="Content warning"
             />
           ) : null}
+          {!replyTo ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <Users className="size-4 shrink-0 text-tertiary" />
+                <Input
+                  value={community}
+                  onChange={(event) => {
+                    setCommunity(event.target.value);
+                    if (event.target.value.trim()) setVisibility("public");
+                  }}
+                  placeholder="Optional community, e.g. !technology@lemmy.world"
+                  aria-label="Community handle"
+                />
+              </div>
+              {community.trim() ? (
+                <Text variant="mini" color="tertiary" className="pl-6">
+                  The first line becomes the Lemmy/PieFed title. Ailo verifies this is a Group and
+                  sends the post publicly.
+                </Text>
+              ) : null}
+            </div>
+          ) : null}
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -204,8 +229,12 @@ export function FediverseView() {
               aria-label="Visibility"
             >
               <SegmentedControlItem value="public">Public</SegmentedControlItem>
-              <SegmentedControlItem value="unlisted">Unlisted</SegmentedControlItem>
-              <SegmentedControlItem value="private">Followers</SegmentedControlItem>
+              <SegmentedControlItem value="unlisted" disabled={Boolean(community.trim())}>
+                Unlisted
+              </SegmentedControlItem>
+              <SegmentedControlItem value="private" disabled={Boolean(community.trim())}>
+                Followers
+              </SegmentedControlItem>
             </SegmentedControl>
             <Label className="ml-1 gap-2">
               <Switch
@@ -223,7 +252,7 @@ export function FediverseView() {
               onClick={() => post.mutate()}
             >
               <Send />
-              {replyTo ? "Reply" : "Post"}
+              {replyTo ? "Reply" : community.trim() ? "Post to community" : "Post"}
             </Button>
           </div>
         </div>
@@ -235,7 +264,7 @@ export function FediverseView() {
             <ErrorNote message={(timelineQuery.error as Error).message} onRetry={refresh} />
           ) : timeline.length === 0 ? (
             <Text color="tertiary" className="px-1 py-8 text-center">
-              Your home timeline is quiet. Follow people to see their posts here.
+              Your home timeline is quiet. Follow people or join communities to see posts here.
             </Text>
           ) : (
             <div className="flex flex-col gap-3">

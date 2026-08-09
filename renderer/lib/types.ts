@@ -68,6 +68,7 @@ export interface MastodonAccount {
   note: string;
   followersCount: number;
   followingCount: number;
+  group: boolean;
 }
 
 export interface MastodonMediaAttachment {
@@ -110,6 +111,15 @@ export interface FediPodStatus {
   baseUrl: string;
   account: MastodonAccount | null;
 }
+
+/**
+ * Result of the one-click OAuth login against FediPod's `/oauth/authorize`.
+ * `password_required` means the agent has a UI password set and none (or the
+ * wrong one) was supplied — the caller should prompt and retry.
+ */
+export type FediPodLoginResult =
+  | { status: "connected"; account: MastodonAccount }
+  | { status: "password_required" };
 
 export interface PublishResults {
   solid?: { ok: true; url: string } | { ok: false; error: string };

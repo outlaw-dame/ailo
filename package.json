@@ -12,6 +12,7 @@
     "dev": "node glaze.ts dev",
     "dev:renderer": "node glaze.ts dev:renderer",
     "lint": "node glaze.ts lint",
+    "test": "node --import tsx --test main/**/*.test.ts",
     "type-check": "node glaze.ts type-check",
     "format": "node glaze.ts format"
   },

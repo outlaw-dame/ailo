@@ -93,6 +93,8 @@ export interface MastodonAccount {
   note: string;
   followersCount: number;
   followingCount: number;
+  /** FediPod extension: the ActivityPub actor has type Group. */
+  group: boolean;
 }
 
 export interface MastodonMediaAttachment {
@@ -146,6 +148,15 @@ export interface FediPodConfig {
   baseUrl: string;
   account: MastodonAccount | null;
 }
+
+/**
+ * Result of the one-click OAuth login against FediPod's `/oauth/authorize`.
+ * `password_required` means the agent has a UI password set and none (or the
+ * wrong one) was supplied — the caller should prompt and retry.
+ */
+export type FediPodLoginResult =
+  | { status: "connected"; account: MastodonAccount }
+  | { status: "password_required" };
 
 export const DEFAULT_FEDIPOD_CONFIG: FediPodConfig = {
   version: 1,

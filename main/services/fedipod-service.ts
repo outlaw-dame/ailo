@@ -5,6 +5,7 @@ import { app, logger, safeStorage } from "@glaze/core/backend";
 
 import type {
   FediPodConfig,
+  FediPodLoginResult,
   FediPodStatus,
   FediverseVisibility,
   MastodonAccount,
@@ -14,6 +15,11 @@ import type {
   Post,
 } from "../types.js";
 import { DEFAULT_FEDIPOD_CONFIG } from "../types.js";
+import {
+  addressPostToCommunity,
+  normalizeCommunityHandle,
+  requireExactGroup,
+} from "./fedipod-groups.js";
 import { JsonStore } from "./json-store.js";
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
@@ -44,12 +50,13 @@ function mapAccount(raw: unknown): MastodonAccount {
     id: str(r.id),
     username: str(r.username),
     acct: str(r.acct),
-    displayName: str(r.display_name) || str(r.username),
+    displayName: str(r.display_name) || str(r.displayName) || str(r.username),
     url: str(r.url),
     avatar: str(r.avatar) || str(r.avatar_static),
     note: str(r.note),
-    followersCount: num(r.followers_count),
-    followingCount: num(r.following_count),
+    followersCount: num(r.followers_count, num(r.followersCount)),
+    followingCount: num(r.following_count, num(r.followingCount)),
+    group: bool(r.group),
   };
 }
 
@@ -263,6 +270,70 @@ class FediPodService {
     return account;
   }
 
+  /**
+   * One-click OAuth login: hits FediPod's `/oauth/authorize` the same way
+   * Phanpy/Tuba/Whalebird do when you add the agent as a custom instance.
+   * With no UI password set, FediPod treats a loopback request as trusted and
+   * auto-approves, handing back a code that IS the access token (FediPod's
+   * `/oauth/token` just echoes it). With a password set, it renders an HTML
+   * login form instead of JSON — we surface that as `password_required` so
+   * the caller can prompt and retry with the password.
+   */
+  async loginWithOneClick(baseUrlInput: string, password?: string): Promise<FediPodLoginResult> {
+    const baseUrl = normalizeBaseUrl(baseUrlInput);
+    const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
+    authorizeUrl.searchParams.set("redirect_uri", "urn:ietf:wg:oauth:2.0:oob");
+
+    let response: Response;
+    try {
+      response = password
+        ? await fetch(authorizeUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ redirect_uri: "urn:ietf:wg:oauth:2.0:oob", password }),
+          })
+        : await fetch(authorizeUrl);
+    } catch (error) {
+      throw new Error(
+        `Could not reach FediPod at ${baseUrl}. Is it running? (${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("text/html")) {
+      // FediPod renders its login form as HTML instead of returning JSON
+      // when a UI password is required (200 = "enter it", 401 = "wrong one").
+      if (response.status === 401) {
+        const html = await response.text().catch(() => "");
+        const message = /class="err"[^>]*>([^<]*)</.exec(html)?.[1];
+        throw new Error(message || "FediPod rejected that password.");
+      }
+      return { status: "password_required" };
+    }
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new Error(
+        `FediPod returned an unexpected response (${response.status}) from /oauth/authorize.`,
+      );
+    }
+    if (!response.ok) {
+      const message =
+        isRecord(body) && typeof body.error === "string"
+          ? body.error
+          : `FediPod login failed (${response.status})`;
+      throw new Error(message);
+    }
+
+    const code = isRecord(body) && typeof body.code === "string" ? body.code : "";
+    if (!code) throw new Error("FediPod did not return an authorization code.");
+
+    const account = await this.connect(baseUrl, code);
+    return { status: "connected", account };
+  }
+
   async disconnect(): Promise<void> {
     await this.clearToken();
     await this.config.save({ ...DEFAULT_FEDIPOD_CONFIG });
@@ -307,6 +378,14 @@ class FediPodService {
     return arr(raw).map(mapNotification);
   }
 
+  async resolveCommunity(handleInput: string): Promise<MastodonAccount> {
+    const handle = normalizeCommunityHandle(handleInput);
+    const params = new URLSearchParams({ q: handle, limit: "20" });
+    const raw = await this.authed(`/api/v1/accounts/search?${params.toString()}`);
+    const accounts = arr(raw).map(mapAccount);
+    return requireExactGroup(accounts, handle);
+  }
+
   /* ------------------------------- actions ------------------------------- */
 
   async postStatus(input: {
@@ -315,9 +394,18 @@ class FediPodService {
     visibility?: FediverseVisibility;
     inReplyToId?: string | null;
     mediaIds?: string[];
+    community?: string | null;
   }): Promise<MastodonStatus> {
+    let status = input.status.trim();
+    if (input.community) {
+      if ((input.visibility ?? "public") !== "public") {
+        throw new Error("Community posts must be public so the group can distribute them.");
+      }
+      const community = await this.resolveCommunity(input.community);
+      status = addressPostToCommunity(status, community.acct);
+    }
     const body: Record<string, unknown> = {
-      status: input.status,
+      status,
       visibility: input.visibility ?? "public",
     };
     if (input.spoilerText) body.spoiler_text = input.spoilerText;

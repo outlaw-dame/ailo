@@ -4,6 +4,9 @@ import { AtSign, CalendarDays, Github, Globe2, Link2, Unplug } from "lucide-reac
 import {
   Badge,
   Button,
+  CollapsibleContent,
+  CollapsibleRoot,
+  CollapsibleTrigger,
   Field,
   FieldGroup,
   FieldSet,
@@ -63,6 +66,8 @@ export function ProfileView() {
   const [repoName, setRepoName] = React.useState("ailo-notes");
   const [fediBaseUrl, setFediBaseUrl] = React.useState("http://localhost:8030");
   const [fediToken, setFediToken] = React.useState("");
+  const [fediPassword, setFediPassword] = React.useState("");
+  const [fediNeedsPassword, setFediNeedsPassword] = React.useState(false);
   const [hydrated, setHydrated] = React.useState(false);
 
   React.useEffect(() => {
@@ -167,6 +172,22 @@ export function ProfileView() {
       toast.success("Solid disconnected");
     },
     onError: (error: Error) => toast.error(error.message || "Could not disconnect Solid"),
+  });
+
+  const fediLogin = useMutation({
+    mutationFn: () => api.fedipod.login(fediBaseUrl.trim(), fediPassword.trim() || undefined),
+    onSuccess: async (result) => {
+      if (result.status === "password_required") {
+        setFediNeedsPassword(true);
+        toast.error("This FediPod instance needs its agent password to authorize login.");
+        return;
+      }
+      setFediPassword("");
+      setFediNeedsPassword(false);
+      await queryClient.invalidateQueries({ queryKey: ["fedipod"] });
+      toast.success(`Connected as @${result.account.acct || result.account.username}`);
+    },
+    onError: (error: Error) => toast.error(error.message || "FediPod login failed"),
   });
 
   const fediConnect = useMutation({
@@ -363,30 +384,73 @@ export function ProfileView() {
                     placeholder="http://localhost:8030"
                   />
                 </Field>
-                <Field
-                  label="Access token"
-                  description="A Mastodon-compatible access token from your FediPod instance."
-                  orientation="vertical"
-                >
-                  <Input
-                    type="password"
-                    value={fediToken}
-                    onChange={(event) => setFediToken(event.target.value)}
-                    placeholder="Paste your access token"
-                  />
-                </Field>
+                {fediNeedsPassword ? (
+                  <Field
+                    label="Agent password"
+                    description="This FediPod instance has a UI password set — enter it to authorize."
+                    orientation="vertical"
+                  >
+                    <Input
+                      type="password"
+                      value={fediPassword}
+                      onChange={(event) => setFediPassword(event.target.value)}
+                      placeholder="Agent password"
+                      autoFocus
+                    />
+                  </Field>
+                ) : null}
               </FieldGroup>
               <div>
                 <Button
                   size="small"
                   variant="accent"
-                  disabled={fediConnect.isPending || !fediBaseUrl.trim() || !fediToken.trim()}
-                  onClick={() => fediConnect.mutate()}
+                  disabled={fediLogin.isPending || !fediBaseUrl.trim()}
+                  onClick={() => fediLogin.mutate()}
                 >
                   <Link2 />
-                  Connect FediPod
+                  Log in with one click
                 </Button>
               </div>
+              <Text variant="small" color="tertiary">
+                Ailo authorizes itself against the agent's <code>/oauth/authorize</code> endpoint, the same
+                way Phanpy or Tuba do. Nothing to copy — this only works while FediPod is reachable at the
+                URL above.
+              </Text>
+
+              <CollapsibleRoot>
+                <CollapsibleTrigger variant="row">
+                  <Text variant="small" color="secondary">
+                    Or paste an access token manually
+                  </Text>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="flex flex-col gap-3 pt-3">
+                    <Field
+                      label="Access token"
+                      description="A Mastodon-compatible access token from your FediPod instance."
+                      orientation="vertical"
+                    >
+                      <Input
+                        type="password"
+                        value={fediToken}
+                        onChange={(event) => setFediToken(event.target.value)}
+                        placeholder="Paste your access token"
+                      />
+                    </Field>
+                    <div>
+                      <Button
+                        size="small"
+                        variant="filled"
+                        disabled={fediConnect.isPending || !fediBaseUrl.trim() || !fediToken.trim()}
+                        onClick={() => fediConnect.mutate()}
+                      >
+                        <Link2 />
+                        Connect with token
+                      </Button>
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </CollapsibleRoot>
             </>
           )}
         </section>

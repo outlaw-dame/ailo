@@ -37,6 +37,23 @@ export function registerFediPodHandlers(): void {
     }
   });
 
+  ipcMain.handle("fedipod:login", async (_event, baseUrl: unknown, password: unknown) => {
+    try {
+      const result = await fediPodService.loginWithOneClick(
+        requireString(baseUrl, "FediPod URL"),
+        typeof password === "string" && password.trim() ? password.trim() : undefined,
+      );
+      if (result.status === "connected") {
+        const status = await fediPodService.getStatus();
+        ipcMain.broadcast("fedipod:status-changed", status);
+      }
+      return result;
+    } catch (error) {
+      logger.error("fedipod", `login failed: ${String(error)}`);
+      throw error;
+    }
+  });
+
   ipcMain.handle("fedipod:disconnect", async () => {
     await fediPodService.disconnect();
     ipcMain.broadcast("fedipod:status-changed", {
@@ -48,7 +65,8 @@ export function registerFediPodHandlers(): void {
   });
 
   ipcMain.handle("fedipod:timeline", async (_event, options: unknown) => {
-    const opts = typeof options === "object" && options !== null ? (options as Record<string, unknown>) : {};
+    const opts =
+      typeof options === "object" && options !== null ? (options as Record<string, unknown>) : {};
     return fediPodService.fetchHomeTimeline({
       maxId: typeof opts.maxId === "string" ? opts.maxId : undefined,
       limit: typeof opts.limit === "number" ? opts.limit : undefined,
@@ -59,13 +77,19 @@ export function registerFediPodHandlers(): void {
     return fediPodService.fetchNotifications();
   });
 
+  ipcMain.handle("fedipod:resolveCommunity", async (_event, handle: unknown) => {
+    return fediPodService.resolveCommunity(requireString(handle, "Community handle"));
+  });
+
   ipcMain.handle("fedipod:post", async (_event, input: unknown) => {
-    const data = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+    const data =
+      typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
     return fediPodService.postStatus({
       status: requireString(data.status, "Status text"),
       spoilerText: typeof data.spoilerText === "string" ? data.spoilerText : null,
       visibility: asVisibility(data.visibility),
       inReplyToId: typeof data.inReplyToId === "string" ? data.inReplyToId : null,
+      community: typeof data.community === "string" ? data.community : null,
     });
   });
 

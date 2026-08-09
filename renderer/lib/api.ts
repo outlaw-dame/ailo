@@ -1,4 +1,5 @@
 import type {
+  FediPodLoginResult,
   FediPodStatus,
   FediverseVisibility,
   GitHubRepoSummary,
@@ -69,15 +70,20 @@ export const api = {
         connected: true;
         account: MastodonAccount;
       }>,
+    login: (baseUrl: string, password?: string) =>
+      ipc().invoke("fedipod:login", baseUrl, password) as Promise<FediPodLoginResult>,
     disconnect: () => ipc().invoke("fedipod:disconnect") as Promise<{ connected: false }>,
     timeline: (options?: { maxId?: string; limit?: number }) =>
       ipc().invoke("fedipod:timeline", options ?? {}) as Promise<MastodonStatus[]>,
     notifications: () => ipc().invoke("fedipod:notifications") as Promise<MastodonNotification[]>,
+    resolveCommunity: (handle: string) =>
+      ipc().invoke("fedipod:resolveCommunity", handle) as Promise<MastodonAccount>,
     post: (input: {
       status: string;
       spoilerText?: string | null;
       visibility?: FediverseVisibility;
       inReplyToId?: string | null;
+      community?: string | null;
     }) => ipc().invoke("fedipod:post", input) as Promise<MastodonStatus>,
     favourite: (id: string, active: boolean) =>
       ipc().invoke("fedipod:favourite", id, active) as Promise<MastodonStatus>,
