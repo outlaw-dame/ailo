@@ -4,10 +4,12 @@ import { fediPodService } from "../services/fedipod-service.js";
 import { normalizeHashtag } from "../services/fedipod-tags.js";
 import { postsStore } from "../services/posts-store.js";
 import type { FediverseContentType, FediverseObjectType, FediverseVisibility } from "../types.js";
+import type { MastodonQuotePolicy } from "../types.js";
 
 const VISIBILITIES: FediverseVisibility[] = ["public", "unlisted", "private", "direct"];
 const OBJECT_TYPES: FediverseObjectType[] = ["Note", "Article"];
 const CONTENT_TYPES: FediverseContentType[] = ["text/plain", "text/markdown", "text/x.misskeymarkdown"];
+const QUOTE_POLICIES: MastodonQuotePolicy[] = ["public", "followers", "nobody"];
 
 function asVisibility(value: unknown): FediverseVisibility {
   return typeof value === "string" && (VISIBILITIES as string[]).includes(value)
@@ -92,6 +94,31 @@ export function registerFediPodHandlers(): void {
   ipcMain.handle("fedipod:followedTags", async () => fediPodService.fetchFollowedTags());
   ipcMain.handle("fedipod:featuredTags", async () => fediPodService.fetchFeaturedTags());
   ipcMain.handle("fedipod:featuredTagSuggestions", async () => fediPodService.fetchFeaturedTagSuggestions());
+  ipcMain.handle("fedipod:suggestions", async () => fediPodService.fetchSuggestions());
+  ipcMain.handle("fedipod:collections", async () => fediPodService.fetchCollections());
+
+  ipcMain.handle("fedipod:dismissSuggestion", async (_event, id: unknown) => {
+    await fediPodService.dismissSuggestion(requireString(id, "Account id"));
+    return { ok: true };
+  });
+  ipcMain.handle("fedipod:createCollection", async (_event, input: unknown) => {
+    const data = typeof input === "object" && input !== null ? input as Record<string, unknown> : {};
+    return fediPodService.createCollection({
+      name: requireString(data.name, "Collection name"),
+      description: typeof data.description === "string" ? data.description : "",
+      discoverable: data.discoverable !== false,
+    });
+  });
+  ipcMain.handle("fedipod:deleteCollection", async (_event, id: unknown) => {
+    await fediPodService.deleteCollection(requireString(id, "Collection id"));
+    return { ok: true };
+  });
+  ipcMain.handle("fedipod:addCollectionAccount", async (_event, collectionId: unknown, accountId: unknown) => {
+    await fediPodService.addCollectionAccount(
+      requireString(collectionId, "Collection id"), requireString(accountId, "Account id"),
+    );
+    return { ok: true };
+  });
 
   ipcMain.handle("fedipod:followTag", async (_event, name: unknown, active: unknown) => {
     return fediPodService.setTagFollow(requireHashtag(name), active !== false);
@@ -154,6 +181,9 @@ export function registerFediPodHandlers(): void {
       contentType: CONTENT_TYPES.includes(data.contentType as FediverseContentType)
         ? (data.contentType as FediverseContentType)
         : "text/plain",
+      quotedStatusId: typeof data.quotedStatusId === "string" ? data.quotedStatusId : null,
+      quoteApprovalPolicy: QUOTE_POLICIES.includes(data.quoteApprovalPolicy as MastodonQuotePolicy)
+        ? data.quoteApprovalPolicy as MastodonQuotePolicy : "public",
     });
   });
 
@@ -163,6 +193,10 @@ export function registerFediPodHandlers(): void {
 
   ipcMain.handle("fedipod:boost", async (_event, id: unknown, active: unknown) => {
     return fediPodService.setBoost(requireString(id, "Status id"), active !== false);
+  });
+
+  ipcMain.handle("fedipod:pin", async (_event, id: unknown, active: unknown) => {
+    return fediPodService.setPin(requireString(id, "Status id"), active !== false);
   });
 
   ipcMain.handle("fedipod:follow", async (_event, id: unknown, active: unknown) => {

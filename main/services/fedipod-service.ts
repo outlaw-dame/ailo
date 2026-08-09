@@ -12,6 +12,7 @@ import type {
   FediverseContentType,
   FediverseObjectType,
   MastodonAccount,
+  MastodonCollection,
   MastodonMediaAttachment,
   MastodonFilter,
   MastodonFilterResult,
@@ -19,6 +20,8 @@ import type {
   MastodonNotification,
   MastodonRelationship,
   MastodonStatus,
+  MastodonSuggestion,
+  MastodonQuotePolicy,
   MastodonTag,
   Post,
 } from "../types.js";
@@ -29,6 +32,7 @@ import {
 } from "./fedipod-groups.js";
 import { JsonStore } from "./json-store.js";
 import { mapFeaturedTag, mapTag } from "./fedipod-tags.js";
+import { mapCollection, mapQuoteMetadata } from "./fedipod-modern.js";
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
@@ -66,7 +70,7 @@ function contentType(value: unknown): FediverseContentType {
 
 /* ------------------------------- mappers ---------------------------------- */
 
-function mapAccount(raw: unknown): MastodonAccount {
+export function mapAccount(raw: unknown): MastodonAccount {
   const r = isRecord(raw) ? raw : {};
   return {
     id: str(r.id),
@@ -137,7 +141,7 @@ function mapRelationship(raw: unknown): MastodonRelationship {
   };
 }
 
-function mapStatus(raw: unknown, depth = 0): MastodonStatus {
+export function mapStatus(raw: unknown, depth = 0): MastodonStatus {
   const r = isRecord(raw) ? raw : {};
   const sourceRaw = isRecord(r.source) ? r.source : null;
   const mappedContentType = contentType(r.content_type ?? sourceRaw?.mediaType);
@@ -166,8 +170,10 @@ function mapStatus(raw: unknown, depth = 0): MastodonStatus {
     repliesCount: num(r.replies_count),
     favourited: bool(r.favourited),
     reblogged: bool(r.reblogged),
+    pinned: bool(r.pinned),
     inReplyToId: typeof r.in_reply_to_id === "string" ? r.in_reply_to_id : null,
     reblog: depth === 0 && isRecord(r.reblog) ? mapStatus(r.reblog, 1) : null,
+    ...mapQuoteMetadata(r, (quoted) => depth === 0 && isRecord(quoted) ? mapStatus(quoted, 1) : null),
   };
 }
 
@@ -179,6 +185,7 @@ function mapNotification(raw: unknown): MastodonNotification {
     createdAt: str(r.created_at),
     account: mapAccount(r.account),
     status: isRecord(r.status) ? mapStatus(r.status) : null,
+    collection: isRecord(r.collection) ? mapCollection(r.collection) : null,
   };
 }
 
@@ -525,6 +532,7 @@ class FediPodService {
         (value): value is FediverseContentType => CONTENT_TYPES.includes(value as FediverseContentType),
       ),
       maxTitleCharacters: Math.min(300, Math.max(1, num(statuses.max_title_characters, 300))),
+      maxPinnedStatuses: Math.min(20, Math.max(1, num(statuses.max_pinned_statuses, 5))),
       supportsCommunityTargeting: bool(statuses.community_targeting),
     };
   }
@@ -535,6 +543,45 @@ class FediPodService {
     const raw = await this.authed(`/api/v1/accounts/search?${params.toString()}`);
     const accounts = arr(raw).map(mapAccount);
     return requireExactGroup(accounts, handle);
+  }
+
+  async fetchSuggestions(): Promise<MastodonSuggestion[]> {
+    return arr(await this.authed("/api/v2/suggestions?limit=40")).map((value) => {
+      const r = isRecord(value) ? value : {};
+      return { source: str(r.source, "global"), account: mapAccount(r.account) };
+    }).filter((value) => value.account.id);
+  }
+
+  async dismissSuggestion(accountId: string): Promise<void> {
+    await this.authed(`/api/v1/suggestions/${encodeURIComponent(accountId)}`, { method: "DELETE" });
+  }
+
+  async fetchCollections(): Promise<MastodonCollection[]> {
+    const account = (await this.config.load()).account;
+    if (!account?.id) return [];
+    const raw = await this.authed(`/api/v1/accounts/${encodeURIComponent(account.id)}/collections?limit=80`);
+    return arr(isRecord(raw) ? raw.collections : []).map(mapCollection).filter((value) => value.id);
+  }
+
+  async createCollection(input: { name: string; description?: string; discoverable?: boolean }): Promise<MastodonCollection> {
+    return mapCollection(await this.authed("/api/v1/collections", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: input.name.trim(), description: input.description?.trim() || "",
+        discoverable: input.discoverable ?? true,
+      }),
+    }));
+  }
+
+  async deleteCollection(id: string): Promise<void> {
+    await this.authed(`/api/v1/collections/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  async addCollectionAccount(collectionId: string, accountId: string): Promise<void> {
+    await this.authed(`/api/v1/collections/${encodeURIComponent(collectionId)}/items`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_id: accountId }),
+    });
   }
 
   /* ------------------------------- actions ------------------------------- */
@@ -549,6 +596,8 @@ class FediPodService {
     objectType?: FediverseObjectType;
     title?: string | null;
     contentType?: FediverseContentType;
+    quotedStatusId?: string | null;
+    quoteApprovalPolicy?: MastodonQuotePolicy;
   }): Promise<MastodonStatus> {
     const status = input.status.trim();
     let community: MastodonAccount | null = null;
@@ -568,6 +617,8 @@ class FediPodService {
     if (community) body.community = community.acct;
     if (input.spoilerText) body.spoiler_text = input.spoilerText;
     if (input.inReplyToId) body.in_reply_to_id = input.inReplyToId;
+    if (input.quotedStatusId) body.quoted_status_id = input.quotedStatusId;
+    if (input.quoteApprovalPolicy) body.quote_approval_policy = input.quoteApprovalPolicy;
     if (input.mediaIds && input.mediaIds.length > 0) body.media_ids = input.mediaIds;
     const raw = await this.authed("/api/v1/statuses", {
       method: "POST",
@@ -593,6 +644,14 @@ class FediPodService {
     const mapped = mapStatus(raw);
     // reblog returns a wrapper whose `reblog` is the boosted status.
     return mapped.reblog ?? mapped;
+  }
+
+  async setPin(id: string, active: boolean): Promise<MastodonStatus> {
+    const raw = await this.authed(
+      `/api/v1/statuses/${encodeURIComponent(id)}/${active ? "pin" : "unpin"}`,
+      { method: "POST" },
+    );
+    return mapStatus(raw);
   }
 
   async setFollow(id: string, active: boolean): Promise<{ following: boolean }> {

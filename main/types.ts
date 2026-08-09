@@ -81,6 +81,7 @@ export const DEFAULT_PROFILE: Profile = {
 
 /** Mastodon status visibility. */
 export type FediverseVisibility = "public" | "unlisted" | "private" | "direct";
+export type MastodonQuotePolicy = "public" | "followers" | "nobody";
 
 export interface MastodonAccount {
   id: string;
@@ -128,9 +129,23 @@ export interface MastodonStatus {
   repliesCount: number;
   favourited: boolean;
   reblogged: boolean;
+  pinned: boolean;
   inReplyToId: string | null;
   /** Present when this status boosts another */
   reblog: MastodonStatus | null;
+  quote: { state: string; quotedStatus: MastodonStatus | null } | null;
+  quoteApproval: { automatic: string[]; manual: string[]; currentUser: string | null } | null;
+  quotesCount: number;
+}
+
+export interface MastodonSuggestion { source: string; account: MastodonAccount }
+export interface MastodonCollectionItem {
+  id: string; accountId: string; state: "pending" | "accepted" | "rejected" | "revoked"; createdAt: string;
+}
+export interface MastodonCollection {
+  id: string; accountId: string; uri: string; url: string; name: string; description: string;
+  language: string | null; sensitive: boolean; discoverable: boolean; itemCount: number;
+  items: MastodonCollectionItem[]; createdAt: string; updatedAt: string;
 }
 
 export interface MastodonRelationship {
@@ -194,16 +209,18 @@ export interface FediPodCapabilities {
   objectTypes: FediverseObjectType[];
   contentTypes: FediverseContentType[];
   maxTitleCharacters: number;
+  maxPinnedStatuses: number;
   supportsCommunityTargeting: boolean;
 }
 
 export interface MastodonNotification {
   id: string;
-  /** mention | reblog | favourite | follow | poll | status | update */
+  /** Includes Mastodon quote and Collection notification types. */
   type: string;
   createdAt: string;
   account: MastodonAccount;
   status: MastodonStatus | null;
+  collection: MastodonCollection | null;
 }
 
 export interface FediPodStatus {

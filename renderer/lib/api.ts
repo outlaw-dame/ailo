@@ -9,11 +9,14 @@ import type {
   GitHubStatus,
   ImageAltText,
   MastodonAccount,
+  MastodonCollection,
   MastodonFilter,
   MastodonFeaturedTag,
   MastodonNotification,
   MastodonRelationship,
   MastodonStatus,
+  MastodonSuggestion,
+  MastodonQuotePolicy,
   MastodonTag,
   Post,
   Profile,
@@ -90,6 +93,16 @@ export const api = {
     featuredTags: () => ipc().invoke("fedipod:featuredTags") as Promise<MastodonFeaturedTag[]>,
     featuredTagSuggestions: () =>
       ipc().invoke("fedipod:featuredTagSuggestions") as Promise<MastodonTag[]>,
+    suggestions: () => ipc().invoke("fedipod:suggestions") as Promise<MastodonSuggestion[]>,
+    dismissSuggestion: (id: string) =>
+      ipc().invoke("fedipod:dismissSuggestion", id) as Promise<{ ok: true }>,
+    collections: () => ipc().invoke("fedipod:collections") as Promise<MastodonCollection[]>,
+    createCollection: (input: { name: string; description?: string; discoverable?: boolean }) =>
+      ipc().invoke("fedipod:createCollection", input) as Promise<MastodonCollection>,
+    deleteCollection: (id: string) =>
+      ipc().invoke("fedipod:deleteCollection", id) as Promise<{ ok: true }>,
+    addCollectionAccount: (collectionId: string, accountId: string) =>
+      ipc().invoke("fedipod:addCollectionAccount", collectionId, accountId) as Promise<{ ok: true }>,
     followTag: (name: string, active: boolean) =>
       ipc().invoke("fedipod:followTag", name, active) as Promise<MastodonTag>,
     featureTag: (name: string) =>
@@ -123,11 +136,15 @@ export const api = {
       objectType?: FediverseObjectType;
       title?: string | null;
       contentType?: FediverseContentType;
+      quotedStatusId?: string | null;
+      quoteApprovalPolicy?: MastodonQuotePolicy;
     }) => ipc().invoke("fedipod:post", input) as Promise<MastodonStatus>,
     favourite: (id: string, active: boolean) =>
       ipc().invoke("fedipod:favourite", id, active) as Promise<MastodonStatus>,
     boost: (id: string, active: boolean) =>
       ipc().invoke("fedipod:boost", id, active) as Promise<MastodonStatus>,
+    pin: (id: string, active: boolean) =>
+      ipc().invoke("fedipod:pin", id, active) as Promise<MastodonStatus>,
     follow: (id: string, active: boolean) =>
       ipc().invoke("fedipod:follow", id, active) as Promise<{ following: boolean }>,
     crossPost: (postId: string, visibility?: FediverseVisibility) =>

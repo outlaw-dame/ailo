@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Ban, ExternalLink, Heart, Repeat2, Reply, ShieldAlert, UserPlus, VolumeX } from "lucide-react";
+import { Ban, ExternalLink, Heart, Pin, Quote, Repeat2, Reply, ShieldAlert, UserPlus, VolumeX } from "lucide-react";
 import { Badge, Button, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
@@ -11,14 +11,19 @@ import type { MastodonStatus } from "../lib/types";
 export function StatusCard({
   status,
   onReply,
+  onQuote,
+  ownAccountId,
 }: {
   status: MastodonStatus;
   onReply?: (status: MastodonStatus) => void;
+  onQuote?: (status: MastodonStatus) => void;
+  ownAccountId?: string | null;
 }) {
   const queryClient = useQueryClient();
   const booster = status.reblog ? status.account : null;
   const s = status.reblog ?? status;
   const followTarget = booster?.group ? booster : s.account;
+  const isOwn = Boolean(ownAccountId && s.account.id === ownAccountId);
   const [revealed, setRevealed] = React.useState(!s.spoilerText);
   const filterModeration = moderationFor(s.filtered);
   const hiddenByFilter = filterModeration.hidden;
@@ -70,6 +75,11 @@ export function StatusCard({
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const pin = useMutation({
+    mutationFn: () => api.fedipod.pin(s.id, !s.pinned),
+    onSuccess: () => { invalidate(); toast.success(s.pinned ? "Post unpinned" : "Post pinned"); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const images = s.mediaAttachments.filter((m) => m.type === "image" || m.type === "gifv");
 
@@ -113,16 +123,18 @@ export function StatusCard({
             </Badge>
           ) : null}
         </div>
-        <Button
-          size="small"
-          variant="transparent"
-          iconOnly
-          aria-label={`${followTarget.group ? "Join" : "Follow"} ${followTarget.displayName}`}
-          disabled={follow.isPending}
-          onClick={() => follow.mutate()}
-        >
-          <UserPlus />
-        </Button>
+        {!isOwn ? (
+          <Button
+            size="small"
+            variant="transparent"
+            iconOnly
+            aria-label={`${followTarget.group ? "Join" : "Follow"} ${followTarget.displayName}`}
+            disabled={follow.isPending}
+            onClick={() => follow.mutate()}
+          >
+            <UserPlus />
+          </Button>
+        ) : null}
       </div>
 
       {s.spoilerText ? (
@@ -177,10 +189,25 @@ export function StatusCard({
               ))}
             </div>
           ) : null}
+          {s.quote ? (
+            s.quote.quotedStatus ? (
+              <div className="flex flex-col gap-1.5 rounded-control border border-secondary bg-control-subtle/50 px-3 py-2.5">
+                <Text variant="small-strong" truncate>
+                  {s.quote.quotedStatus.account.displayName} · @{s.quote.quotedStatus.account.acct || s.quote.quotedStatus.account.username}
+                </Text>
+                <div
+                  className="text-sm leading-relaxed break-words [&_a]:underline"
+                  dangerouslySetInnerHTML={{ __html: renderFediverseContent(s.quote.quotedStatus) }}
+                />
+              </div>
+            ) : (
+              <Text variant="mini" color="tertiary">Quote {s.quote.state}</Text>
+            )
+          ) : null}
         </>
       ) : null}
 
-      <div className="flex items-center gap-1 -ml-1.5 text-tertiary">
+      <div className="flex flex-wrap items-center gap-1 -ml-1.5 text-tertiary">
         <Button size="small" variant="transparent" onClick={() => onReply?.(s)}>
           <Reply />
           <span className="tabular-nums">{s.repliesCount || ""}</span>
@@ -198,6 +225,21 @@ export function StatusCard({
         <Button
           size="small"
           variant="transparent"
+          disabled={!onQuote || s.quoteApproval?.currentUser === "denied"}
+          onClick={() => onQuote?.(s)}
+        >
+          <Quote />
+          <span className="tabular-nums">{s.quotesCount || ""}</span>
+        </Button>
+        {isOwn ? (
+          <Button size="small" variant="transparent" className={s.pinned ? "text-primary" : undefined}
+            disabled={pin.isPending} onClick={() => pin.mutate()}>
+            <Pin />{s.pinned ? "Unpin" : "Pin"}
+          </Button>
+        ) : null}
+        <Button
+          size="small"
+          variant="transparent"
           className={s.favourited ? "text-primary" : undefined}
           disabled={favourite.isPending}
           onClick={() => favourite.mutate()}
@@ -205,7 +247,7 @@ export function StatusCard({
           <Heart />
           <span className="tabular-nums">{s.favouritesCount || ""}</span>
         </Button>
-        <Button
+        {!isOwn ? <Button
           size="small"
           variant="transparent"
           disabled={mute.isPending}
@@ -213,18 +255,20 @@ export function StatusCard({
         >
           <VolumeX />
           Mute
-        </Button>
-        <Button
-          size="small"
-          variant="transparent"
-          disabled={block.isPending}
-          onClick={() => {
-            if (window.confirm(`Block @${s.account.acct || s.account.username}?`)) block.mutate();
-          }}
-        >
-          <Ban />
-          Block
-        </Button>
+        </Button> : null}
+        {!isOwn ? (
+          <Button
+            size="small"
+            variant="transparent"
+            disabled={block.isPending}
+            onClick={() => {
+              if (window.confirm(`Block @${s.account.acct || s.account.username}?`)) block.mutate();
+            }}
+          >
+            <Ban />
+            Block
+          </Button>
+        ) : null}
         {s.url ? (
           <Button
             size="small"

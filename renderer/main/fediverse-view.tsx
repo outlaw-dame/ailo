@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AtSign, Bell, Hash, Home, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
+import { AtSign, Bell, Compass, Hash, Home, Quote, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
 import {
   Button,
   EmptyState,
@@ -18,6 +18,7 @@ import {
 
 import { StatusCard } from "../components/status-card";
 import { FediverseModeration } from "../components/fediverse-moderation";
+import { FediverseDiscover } from "../components/fediverse-discover";
 import { FediverseTags } from "../components/fediverse-tags";
 import { api } from "../lib/api";
 import { formatRelativeDate } from "../lib/markdown";
@@ -27,9 +28,10 @@ import type {
   FediverseObjectType,
   FediverseVisibility,
   MastodonStatus,
+  MastodonQuotePolicy,
 } from "../lib/types";
 
-type Tab = "home" | "notifications" | "tags" | "moderation";
+type Tab = "home" | "notifications" | "discover" | "tags" | "moderation";
 
 const NOTIFICATION_LABEL: Record<string, string> = {
   mention: "mentioned you",
@@ -40,6 +42,10 @@ const NOTIFICATION_LABEL: Record<string, string> = {
   poll: "ran a poll that ended",
   status: "posted",
   update: "edited a post",
+  quote: "quoted your post",
+  quoted_update: "updated a quote of your post",
+  added_to_collection: "added you to a collection",
+  collection_update: "updated a collection featuring you",
 };
 
 function FeedSkeleton() {
@@ -79,6 +85,8 @@ export function FediverseView() {
   const [cw, setCw] = React.useState("");
   const [visibility, setVisibility] = React.useState<FediverseVisibility>("public");
   const [replyTo, setReplyTo] = React.useState<MastodonStatus | null>(null);
+  const [quoteTarget, setQuoteTarget] = React.useState<MastodonStatus | null>(null);
+  const [quotePolicy, setQuotePolicy] = React.useState<MastodonQuotePolicy>("public");
   const [community, setCommunity] = React.useState("");
   const [objectType, setObjectType] = React.useState<FediverseObjectType>("Note");
   const [contentType, setContentType] = React.useState<FediverseContentType>("text/plain");
@@ -132,16 +140,19 @@ export function FediverseView() {
         spoilerText: cwEnabled ? cw.trim() || "Sensitive content" : null,
         visibility,
         inReplyToId: replyTo?.id ?? null,
-        community: replyTo ? null : community.trim() || null,
-        objectType: replyTo ? "Note" : objectType,
-        title: !replyTo && objectType === "Article" ? title.trim() : null,
-        contentType: replyTo ? "text/plain" : contentType,
+        quotedStatusId: quoteTarget?.id ?? null,
+        quoteApprovalPolicy: quotePolicy,
+        community: replyTo || quoteTarget ? null : community.trim() || null,
+        objectType: replyTo || quoteTarget ? "Note" : objectType,
+        title: !replyTo && !quoteTarget && objectType === "Article" ? title.trim() : null,
+        contentType: replyTo || quoteTarget ? "text/plain" : contentType,
       }),
     onSuccess: async () => {
       setText("");
       setCw("");
       setCwEnabled(false);
       setReplyTo(null);
+      setQuoteTarget(null);
       setCommunity("");
       setTitle("");
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] });
@@ -165,6 +176,13 @@ export function FediverseView() {
         queryClient.invalidateQueries({ queryKey: ["fedipod", "followed-tags"] }),
         queryClient.invalidateQueries({ queryKey: ["fedipod", "featured-tags"] }),
         queryClient.invalidateQueries({ queryKey: ["fedipod", "featured-tag-suggestions"] }),
+      ]);
+      return;
+    }
+    if (tab === "discover") {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["fedipod", "suggestions"] }),
+        queryClient.invalidateQueries({ queryKey: ["fedipod", "collections"] }),
       ]);
       return;
     }
@@ -224,6 +242,10 @@ export function FediverseView() {
               <Bell />
               Alerts
             </SegmentedControlItem>
+            <SegmentedControlItem value="discover">
+              <Compass />
+              Discover
+            </SegmentedControlItem>
             <SegmentedControlItem value="tags">
               <Hash />
               Tags
@@ -241,7 +263,7 @@ export function FediverseView() {
       className="h-full"
     >
       <div className="flex max-w-2xl flex-col gap-5 px-6 py-4">
-        {tab !== "moderation" && tab !== "tags" ? (
+        {tab !== "moderation" && tab !== "tags" && tab !== "discover" ? (
           <div className="flex flex-col gap-3 rounded-card border border-secondary bg-well/40 px-4 py-3.5">
           {replyTo ? (
             <div className="flex items-center gap-2">
@@ -259,7 +281,16 @@ export function FediverseView() {
               </Button>
             </div>
           ) : null}
-          {!replyTo && articleSupported ? (
+          {quoteTarget ? (
+            <div className="flex items-center gap-2 rounded-control border border-secondary px-3 py-2">
+              <Quote className="size-4 shrink-0 text-tertiary" />
+              <Text variant="small" color="tertiary" truncate className="min-w-0 flex-1">
+                Quoting @{quoteTarget.account.acct || quoteTarget.account.username}
+              </Text>
+              <Button size="small" variant="transparent" iconOnly aria-label="Cancel quote" onClick={() => setQuoteTarget(null)}><X /></Button>
+            </div>
+          ) : null}
+          {!replyTo && !quoteTarget && articleSupported ? (
             <SegmentedControl
               size="small"
               value={objectType}
@@ -272,7 +303,7 @@ export function FediverseView() {
               <SegmentedControlItem value="Article">Article</SegmentedControlItem>
             </SegmentedControl>
           ) : null}
-          {!replyTo && objectType === "Article" ? (
+          {!replyTo && !quoteTarget && objectType === "Article" ? (
             <Input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
@@ -281,7 +312,7 @@ export function FediverseView() {
               maxLength={capabilities?.maxTitleCharacters ?? 300}
             />
           ) : null}
-          {!replyTo && availableContentTypes.length > 1 ? (
+          {!replyTo && !quoteTarget && availableContentTypes.length > 1 ? (
             <SegmentedControl
               size="small"
               value={contentType}
@@ -306,7 +337,7 @@ export function FediverseView() {
               placeholder="Content warning"
             />
           ) : null}
-          {!replyTo && capabilities?.supportsCommunityTargeting ? (
+          {!replyTo && !quoteTarget && capabilities?.supportsCommunityTargeting ? (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
                 <Users className="size-4 shrink-0 text-tertiary" />
@@ -352,6 +383,18 @@ export function FediverseView() {
                 Followers
               </SegmentedControlItem>
             </SegmentedControl>
+            {!replyTo ? (
+              <select
+                value={quotePolicy}
+                onChange={(event) => setQuotePolicy(event.target.value as MastodonQuotePolicy)}
+                aria-label="Who may quote this post"
+                className="rounded-control border border-secondary bg-control-subtle px-2 py-1 text-sm"
+              >
+                <option value="public">Quotes: anyone</option>
+                <option value="followers">Quotes: followers</option>
+                <option value="nobody">Quotes: nobody</option>
+              </select>
+            ) : null}
             <Label className="ml-1 gap-2">
               <Switch
                 checked={cwEnabled}
@@ -368,7 +411,7 @@ export function FediverseView() {
               onClick={() => post.mutate()}
             >
               <Send />
-              {replyTo ? "Reply" : community.trim() ? "Post to community" : "Post"}
+              {replyTo ? "Reply" : quoteTarget ? "Quote" : community.trim() ? "Post to community" : "Post"}
             </Button>
           </div>
           </div>
@@ -386,7 +429,9 @@ export function FediverseView() {
           ) : (
             <div className="flex flex-col gap-3">
               {timeline.map((s) => (
-                <StatusCard key={s.id} status={s} onReply={setReplyTo} />
+                <StatusCard key={s.id} status={s} ownAccountId={account?.id}
+                  onReply={(target) => { setQuoteTarget(null); setReplyTo(target); }}
+                  onQuote={(target) => { setReplyTo(null); setQuoteTarget(target); setObjectType("Note"); }} />
               ))}
             </div>
           )
@@ -421,13 +466,25 @@ export function FediverseView() {
                       {formatRelativeDate(n.createdAt)}
                     </Text>
                   </div>
-                  {n.status ? <StatusCard status={n.status} onReply={setReplyTo} /> : null}
+                  {n.status ? <StatusCard status={n.status} ownAccountId={account?.id}
+                    onReply={(target) => { setQuoteTarget(null); setReplyTo(target); }}
+                    onQuote={(target) => { setReplyTo(null); setQuoteTarget(target); setObjectType("Note"); }} /> : null}
+                  {n.collection ? (
+                    <div className="rounded-card border border-secondary bg-control-subtle px-3 py-2">
+                      <Text variant="small-strong">{n.collection.name}</Text>
+                      {n.collection.description ? (
+                        <Text variant="small" color="secondary">{n.collection.description}</Text>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
           )
         ) : tab === "tags" ? (
           <FediverseTags />
+        ) : tab === "discover" ? (
+          <FediverseDiscover />
         ) : (
           <FediverseModeration />
         )}
