@@ -117,6 +117,7 @@ export interface MastodonFilterKeyword {
   /** Ailo/FediPod extension: compare sentence meaning in addition to Mastodon's exact match. */
   semantic: boolean;
   semanticThreshold: number | null;
+  semanticModel: string | null;
 }
 
 export interface MastodonFilter {

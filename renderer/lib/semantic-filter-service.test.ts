@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { MastodonFilter, MastodonStatus } from "./types";
-import { SemanticFilterService, semanticChunks, semanticText } from "./semantic-filter-service.js";
+import {
+  SemanticFilterService,
+  semanticChunks,
+  semanticDocument,
+  semanticQuery,
+  semanticText,
+} from "./semantic-filter-service.js";
 
 function status(content: string): MastodonStatus {
   return {
@@ -15,17 +21,17 @@ function status(content: string): MastodonStatus {
   };
 }
 
-function filter(threshold = 0.55): MastodonFilter {
+function filter(threshold = 0.6): MastodonFilter {
   return {
     id: "f1", title: "Transport", context: ["home"], expiresAt: null, action: "hide",
-    keywords: [{ id: "f1-0", keyword: "electric cars", wholeWord: false, semantic: true, semanticThreshold: threshold }],
+    keywords: [{ id: "f1-0", keyword: "electric cars", wholeWord: false, semantic: true, semanticThreshold: threshold, semanticModel: "embeddinggemma-300m" }],
   };
 }
 
 test("semantic matching adds standard filter metadata above the configured threshold", async () => {
   const vectors: Record<string, number[]> = {
-    "electric cars": [1, 0],
-    "Battery-powered vehicles are getting cheaper.": [0.8, 0.2],
+    "task: search result | query: electric cars": [1, 0],
+    "title: none | text: Battery-powered vehicles are getting cheaper.": [0.8, 0.2],
   };
   const service = new SemanticFilterService(async (texts) => texts.map((text) => vectors[text]));
   const posts = [status("<p>Battery-powered vehicles are getting cheaper.</p>")];
@@ -35,7 +41,7 @@ test("semantic matching adds standard filter metadata above the configured thres
 
 test("semantic matching respects contexts, expiry, and strict thresholds", async () => {
   const service = new SemanticFilterService(async (texts) => texts.map((text) =>
-    text === "electric cars" ? [1, 0] : [0.8, 0.2],
+    text === "task: search result | query: electric cars" ? [1, 0] : [0.8, 0.2],
   ));
   const post = status("Battery-powered vehicles are getting cheaper.");
   await service.apply([post], [filter(0.9)], "home");
@@ -48,4 +54,12 @@ test("semantic text strips active markup and chunks bounded content", () => {
   const post = status("<script>bad()</script><p>Clean &amp; safe. Another sentence.</p>");
   assert.equal(semanticText(post), "Clean & safe. Another sentence.");
   assert.deepEqual(semanticChunks(semanticText(post)), ["Clean & safe.", "Another sentence."]);
+});
+
+test("EmbeddingGemma receives its documented retrieval prompts", () => {
+  assert.equal(semanticQuery("#gardening"), "task: search result | query: gardening");
+  assert.equal(
+    semanticDocument("The best soil for tomatoes.", "Garden notes"),
+    "title: Garden notes | text: The best soil for tomatoes.",
+  );
 });

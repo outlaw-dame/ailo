@@ -100,7 +100,8 @@ export function registerFediPodHandlers(): void {
       wholeWord: data.wholeWord === true,
       semantic: data.semantic !== false,
       semanticThreshold: typeof data.semanticThreshold === "number"
-        ? Math.min(0.9, Math.max(0.3, data.semanticThreshold)) : 0.55,
+        ? Math.min(0.9, Math.max(0.3, data.semanticThreshold)) : 0.6,
+      semanticModel: "embeddinggemma-300m",
       action: data.action === "hide" ? "hide" : "warn",
     });
   });

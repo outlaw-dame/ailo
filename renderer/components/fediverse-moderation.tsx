@@ -44,7 +44,7 @@ export function FediverseModeration() {
   const [keyword, setKeyword] = React.useState("");
   const [wholeWord, setWholeWord] = React.useState(false);
   const [action, setAction] = React.useState<"warn" | "hide">("warn");
-  const [semanticThreshold, setSemanticThreshold] = React.useState("0.55");
+  const [semanticThreshold, setSemanticThreshold] = React.useState("0.60");
 
   const blocks = useQuery({ queryKey: ["fedipod", "blocks"], queryFn: api.fedipod.blocks });
   const mutes = useQuery({ queryKey: ["fedipod", "mutes"], queryFn: api.fedipod.mutes });
@@ -80,6 +80,7 @@ export function FediverseModeration() {
         action,
         semantic: true,
         semanticThreshold: Number(semanticThreshold),
+        semanticModel: "embeddinggemma-300m",
       });
     },
     onSuccess: async () => {
@@ -117,7 +118,8 @@ export function FediverseModeration() {
         <div className="flex items-center gap-2"><ListFilter className="size-4" /><Text variant="strong">Semantic filters</Text></div>
         <Text variant="small" color="tertiary">
           Match the exact text, hashtag, whole word, or phrase—and posts with the same meaning.
-          Semantic analysis runs locally; the model downloads once when you add your first filter.
+          EmbeddingGemma analysis runs locally. Its approximately 230 MB model downloads and
+          caches when you add your first filter.
         </Text>
         <div className="grid gap-2 sm:grid-cols-2">
           <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Filter name" aria-label="Filter name" maxLength={200} />
@@ -129,9 +131,9 @@ export function FediverseModeration() {
             <SegmentedControlItem value="hide">Hide</SegmentedControlItem>
           </SegmentedControl>
           <SegmentedControl size="small" value={semanticThreshold} onValueChange={setSemanticThreshold} aria-label="Semantic sensitivity">
-            <SegmentedControlItem value="0.65">Strict</SegmentedControlItem>
-            <SegmentedControlItem value="0.55">Balanced</SegmentedControlItem>
-            <SegmentedControlItem value="0.45">Broad</SegmentedControlItem>
+            <SegmentedControlItem value="0.67">Strict</SegmentedControlItem>
+            <SegmentedControlItem value="0.60">Balanced</SegmentedControlItem>
+            <SegmentedControlItem value="0.54">Broad</SegmentedControlItem>
           </SegmentedControl>
           <Label className="gap-2"><Switch checked={wholeWord} onCheckedChange={setWholeWord} />Whole-word exact match</Label>
           <Button className="ml-auto" size="small" variant="accent" disabled={createFilter.isPending || !title.trim() || !keyword.trim()} onClick={() => createFilter.mutate()}>
@@ -144,7 +146,7 @@ export function FediverseModeration() {
               <div className="flex flex-wrap items-center gap-2">
                 <Text variant="small">{filter.title}</Text>
                 <Badge size="small" color={filter.action === "hide" ? "red" : "blue"}>{filter.action}</Badge>
-                {filter.keywords.some((item) => item.semantic) ? <Badge size="small">semantic</Badge> : null}
+                {filter.keywords.some((item) => item.semantic) ? <Badge size="small">EmbeddingGemma</Badge> : null}
               </div>
               <Text variant="mini" color="tertiary" truncate>{filter.keywords.map((item) => item.keyword).join(", ")}</Text>
             </div>

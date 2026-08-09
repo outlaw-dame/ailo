@@ -1,13 +1,25 @@
 import type { MastodonFilter, MastodonFilterResult, MastodonStatus } from "./types";
 
-const MODEL = "Xenova/all-MiniLM-L6-v2";
-const MODEL_REVISION = "751bff37182d3f1213fa05d7196b954e230abad9";
-const DEFAULT_THRESHOLD = 0.55;
+const MODEL = "onnx-community/embeddinggemma-300m-ONNX";
+const MODEL_REVISION = "5090578d9565bb06545b4552f76e6bc2c93e4a66";
+const MODEL_TAG = "embeddinggemma-300m";
+const DEFAULT_THRESHOLD = 0.6;
 const MAX_TEXT_CHARACTERS = 20_000;
 const MAX_CHUNKS = 12;
 const CACHE_LIMIT = 512;
+const LEGACY_MODEL_PATH = "/Xenova/all-MiniLM-L6-v2/";
 
 export type EmbedTexts = (texts: string[]) => Promise<number[][]>;
+
+async function removeLegacyModelCache(): Promise<void> {
+  if (typeof caches === "undefined") return;
+  for (const cacheName of await caches.keys()) {
+    const cache = await caches.open(cacheName);
+    for (const request of await cache.keys()) {
+      if (request.url.includes(LEGACY_MODEL_PATH)) await cache.delete(request);
+    }
+  }
+}
 
 function decodeHtml(text: string): string {
   return text
@@ -30,7 +42,6 @@ function decodeHtml(text: string): string {
 export function semanticText(status: MastodonStatus): string {
   const source = status.source?.content;
   return decodeHtml([
-    status.title,
     status.spoilerText,
     source || status.content,
   ].filter(Boolean).join(". ")).slice(0, MAX_TEXT_CHARACTERS);
@@ -52,8 +63,22 @@ export function semanticChunks(text: string): string[] {
   return chunks;
 }
 
-function semanticQuery(keyword: string): string {
-  return keyword.replace(/^#+/, "").trim();
+export function semanticQuery(keyword: string): string {
+  const content = keyword.replace(/^#+/, "").trim();
+  return `task: search result | query: ${content}`;
+}
+
+export function semanticDocument(text: string, title: string | null): string {
+  const normalizedTitle = title ? decodeHtml(title).slice(0, 300) : "none";
+  return `title: ${normalizedTitle || "none"} | text: ${text}`;
+}
+
+function semanticThreshold(keyword: MastodonFilter["keywords"][number]): number {
+  if (keyword.semanticModel === MODEL_TAG) return keyword.semanticThreshold ?? DEFAULT_THRESHOLD;
+  const legacy = keyword.semanticThreshold ?? 0.55;
+  if (legacy <= 0.45) return 0.54;
+  if (legacy <= 0.55) return 0.6;
+  return 0.67;
 }
 
 function dot(left: number[], right: number[]): number {
@@ -90,9 +115,10 @@ export class SemanticFilterService {
       this.embedderPromise = (async () => {
         const { pipeline } = await import("@huggingface/transformers");
         const extractor = await pipeline("feature-extraction", MODEL, {
-          dtype: "q8",
+          dtype: "q4",
           revision: MODEL_REVISION,
         });
+        await removeLegacyModelCache().catch(() => undefined);
         return async (texts: string[]) => {
           const output = await extractor(texts, { pooling: "mean", normalize: true });
           const width = output.dims[output.dims.length - 1] ?? 0;
@@ -160,16 +186,19 @@ export class SemanticFilterService {
       targets.push(status);
       if (status.reblog) targets.push(status.reblog);
     }
-    const chunksByStatus = new Map(targets.map((status) => [status.id, semanticChunks(semanticText(status))]));
+    const documentsByStatus = new Map(targets.map((status) => [
+      status.id,
+      semanticChunks(semanticText(status)).map((chunk) => semanticDocument(chunk, status.title)),
+    ]));
     const queries = semanticFilters.flatMap((filter) =>
       filter.keywords.filter((keyword) => keyword.semantic).map((keyword) => semanticQuery(keyword.keyword)),
     );
-    const allChunks = [...chunksByStatus.values()].flat();
-    if (!allChunks.length) return statuses;
+    const allDocuments = [...documentsByStatus.values()].flat();
+    if (!allDocuments.length) return statuses;
 
     let vectors: Map<string, number[]>;
     try {
-      vectors = await this.vectors([...queries, ...allChunks]);
+      vectors = await this.vectors([...queries, ...allDocuments]);
     } catch (error) {
       console.warn(
         "[semantic-filters] Semantic matching unavailable; exact Mastodon filters remain active:",
@@ -179,15 +208,15 @@ export class SemanticFilterService {
     }
 
     for (const status of targets) {
-      const chunks = chunksByStatus.get(status.id) ?? [];
+      const documents = documentsByStatus.get(status.id) ?? [];
       for (const filter of semanticFilters) {
         if (exactResult(status, filter.id)) continue;
         const matches = filter.keywords.filter((keyword) => {
           if (!keyword.semantic) return false;
           const query = vectors.get(semanticQuery(keyword.keyword));
           if (!query) return false;
-          const threshold = keyword.semanticThreshold ?? DEFAULT_THRESHOLD;
-          return chunks.some((chunk) => dot(query, vectors.get(chunk) ?? []) >= threshold);
+          const threshold = semanticThreshold(keyword);
+          return documents.some((document) => dot(query, vectors.get(document) ?? []) >= threshold);
         });
         if (matches.length) {
           status.filtered.push({
