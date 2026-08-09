@@ -1,6 +1,7 @@
 import { ipcMain, logger } from "@glaze/core/backend";
 
 import { fediPodService } from "../services/fedipod-service.js";
+import { normalizeHashtag } from "../services/fedipod-tags.js";
 import { postsStore } from "../services/posts-store.js";
 import type { FediverseContentType, FediverseObjectType, FediverseVisibility } from "../types.js";
 
@@ -17,6 +18,12 @@ function asVisibility(value: unknown): FediverseVisibility {
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
   return value;
+}
+
+function requireHashtag(value: unknown): string {
+  const tag = normalizeHashtag(value);
+  if (tag) return tag;
+  throw new Error("Hashtag must contain letters or an underscore and no spaces or punctuation");
 }
 
 export function registerFediPodHandlers(): void {
@@ -82,6 +89,20 @@ export function registerFediPodHandlers(): void {
   ipcMain.handle("fedipod:blocks", async () => fediPodService.fetchBlockedAccounts());
   ipcMain.handle("fedipod:mutes", async () => fediPodService.fetchMutedAccounts());
   ipcMain.handle("fedipod:filters", async () => fediPodService.fetchFilters());
+  ipcMain.handle("fedipod:followedTags", async () => fediPodService.fetchFollowedTags());
+  ipcMain.handle("fedipod:featuredTags", async () => fediPodService.fetchFeaturedTags());
+  ipcMain.handle("fedipod:featuredTagSuggestions", async () => fediPodService.fetchFeaturedTagSuggestions());
+
+  ipcMain.handle("fedipod:followTag", async (_event, name: unknown, active: unknown) => {
+    return fediPodService.setTagFollow(requireHashtag(name), active !== false);
+  });
+  ipcMain.handle("fedipod:featureTag", async (_event, name: unknown) => {
+    return fediPodService.featureTag(requireHashtag(name));
+  });
+  ipcMain.handle("fedipod:unfeatureTag", async (_event, id: unknown) => {
+    await fediPodService.unfeatureTag(requireString(id, "Featured tag id"));
+    return { ok: true };
+  });
 
   ipcMain.handle("fedipod:block", async (_event, id: unknown, active: unknown) => {
     return fediPodService.setBlock(requireString(id, "Account id"), active !== false);

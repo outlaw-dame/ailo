@@ -140,6 +140,29 @@ export interface MastodonRelationship {
   mutingNotifications: boolean;
 }
 
+export interface MastodonTagHistory {
+  day: string;
+  uses: string;
+  accounts: string;
+}
+
+export interface MastodonTag {
+  id: string;
+  name: string;
+  url: string;
+  history: MastodonTagHistory[];
+  following: boolean;
+  featured: boolean;
+}
+
+export interface MastodonFeaturedTag {
+  id: string;
+  name: string;
+  url: string;
+  statusesCount: number;
+  lastStatusAt: string | null;
+}
+
 export interface MastodonFilterKeyword {
   id: string;
   keyword: string;

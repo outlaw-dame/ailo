@@ -10,9 +10,11 @@ import type {
   ImageAltText,
   MastodonAccount,
   MastodonFilter,
+  MastodonFeaturedTag,
   MastodonNotification,
   MastodonRelationship,
   MastodonStatus,
+  MastodonTag,
   Post,
   Profile,
   PublishResults,
@@ -84,6 +86,16 @@ export const api = {
     blocks: () => ipc().invoke("fedipod:blocks") as Promise<MastodonAccount[]>,
     mutes: () => ipc().invoke("fedipod:mutes") as Promise<MastodonAccount[]>,
     filters: () => ipc().invoke("fedipod:filters") as Promise<MastodonFilter[]>,
+    followedTags: () => ipc().invoke("fedipod:followedTags") as Promise<MastodonTag[]>,
+    featuredTags: () => ipc().invoke("fedipod:featuredTags") as Promise<MastodonFeaturedTag[]>,
+    featuredTagSuggestions: () =>
+      ipc().invoke("fedipod:featuredTagSuggestions") as Promise<MastodonTag[]>,
+    followTag: (name: string, active: boolean) =>
+      ipc().invoke("fedipod:followTag", name, active) as Promise<MastodonTag>,
+    featureTag: (name: string) =>
+      ipc().invoke("fedipod:featureTag", name) as Promise<MastodonFeaturedTag>,
+    unfeatureTag: (id: string) =>
+      ipc().invoke("fedipod:unfeatureTag", id) as Promise<{ ok: true }>,
     block: (id: string, active: boolean) =>
       ipc().invoke("fedipod:block", id, active) as Promise<MastodonRelationship>,
     mute: (id: string, active: boolean) =>

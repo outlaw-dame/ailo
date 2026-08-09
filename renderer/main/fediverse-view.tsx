@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AtSign, Bell, Home, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
+import { AtSign, Bell, Hash, Home, RefreshCw, Send, ShieldCheck, Users, X } from "lucide-react";
 import {
   Button,
   EmptyState,
@@ -18,6 +18,7 @@ import {
 
 import { StatusCard } from "../components/status-card";
 import { FediverseModeration } from "../components/fediverse-moderation";
+import { FediverseTags } from "../components/fediverse-tags";
 import { api } from "../lib/api";
 import { formatRelativeDate } from "../lib/markdown";
 import { semanticFilterService } from "../lib/semantic-filter-service";
@@ -28,7 +29,7 @@ import type {
   MastodonStatus,
 } from "../lib/types";
 
-type Tab = "home" | "notifications" | "moderation";
+type Tab = "home" | "notifications" | "tags" | "moderation";
 
 const NOTIFICATION_LABEL: Record<string, string> = {
   mention: "mentioned you",
@@ -159,6 +160,14 @@ export function FediverseView() {
       ]);
       return;
     }
+    if (tab === "tags") {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["fedipod", "followed-tags"] }),
+        queryClient.invalidateQueries({ queryKey: ["fedipod", "featured-tags"] }),
+        queryClient.invalidateQueries({ queryKey: ["fedipod", "featured-tag-suggestions"] }),
+      ]);
+      return;
+    }
     void queryClient.invalidateQueries({
       queryKey: ["fedipod", tab === "home" ? "timeline" : "notifications"],
     });
@@ -215,6 +224,10 @@ export function FediverseView() {
               <Bell />
               Alerts
             </SegmentedControlItem>
+            <SegmentedControlItem value="tags">
+              <Hash />
+              Tags
+            </SegmentedControlItem>
             <SegmentedControlItem value="moderation">
               <ShieldCheck />
               Safety
@@ -228,7 +241,7 @@ export function FediverseView() {
       className="h-full"
     >
       <div className="flex max-w-2xl flex-col gap-5 px-6 py-4">
-        {tab !== "moderation" ? (
+        {tab !== "moderation" && tab !== "tags" ? (
           <div className="flex flex-col gap-3 rounded-card border border-secondary bg-well/40 px-4 py-3.5">
           {replyTo ? (
             <div className="flex items-center gap-2">
@@ -413,6 +426,8 @@ export function FediverseView() {
               ))}
             </div>
           )
+        ) : tab === "tags" ? (
+          <FediverseTags />
         ) : (
           <FediverseModeration />
         )}

@@ -15,9 +15,11 @@ import type {
   MastodonMediaAttachment,
   MastodonFilter,
   MastodonFilterResult,
+  MastodonFeaturedTag,
   MastodonNotification,
   MastodonRelationship,
   MastodonStatus,
+  MastodonTag,
   Post,
 } from "../types.js";
 import { DEFAULT_FEDIPOD_CONFIG } from "../types.js";
@@ -26,6 +28,7 @@ import {
   requireExactGroup,
 } from "./fedipod-groups.js";
 import { JsonStore } from "./json-store.js";
+import { mapFeaturedTag, mapTag } from "./fedipod-tags.js";
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
@@ -446,6 +449,36 @@ class FediPodService {
 
   async fetchFilters(): Promise<MastodonFilter[]> {
     return arr(await this.authed("/api/v2/filters")).map(mapFilter);
+  }
+
+  async fetchFollowedTags(): Promise<MastodonTag[]> {
+    return arr(await this.authed("/api/v1/followed_tags?limit=200")).map(mapTag);
+  }
+
+  async setTagFollow(name: string, active: boolean): Promise<MastodonTag> {
+    return mapTag(await this.authed(
+      `/api/v1/tags/${encodeURIComponent(name)}/${active ? "follow" : "unfollow"}`,
+      { method: "POST" },
+    ));
+  }
+
+  async fetchFeaturedTags(): Promise<MastodonFeaturedTag[]> {
+    return arr(await this.authed("/api/v1/featured_tags")).map(mapFeaturedTag);
+  }
+
+  async fetchFeaturedTagSuggestions(): Promise<MastodonTag[]> {
+    return arr(await this.authed("/api/v1/featured_tags/suggestions")).map(mapTag);
+  }
+
+  async featureTag(name: string): Promise<MastodonFeaturedTag> {
+    return mapFeaturedTag(await this.authed("/api/v1/featured_tags", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }));
+  }
+
+  async unfeatureTag(id: string): Promise<void> {
+    await this.authed(`/api/v1/featured_tags/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
   async createFilter(input: {
