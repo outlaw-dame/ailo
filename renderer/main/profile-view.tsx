@@ -60,7 +60,7 @@ export function ProfileView() {
   const [calComPath, setCalComPath] = React.useState("");
   const [solidIssuer, setSolidIssuer] = React.useState("https://login.inrupt.com");
   const [solidPodRoot, setSolidPodRoot] = React.useState("");
-  const [repoName, setRepoName] = React.useState("knot-notes");
+  const [repoName, setRepoName] = React.useState("ailo-notes");
   const [fediBaseUrl, setFediBaseUrl] = React.useState("http://localhost:8030");
   const [fediToken, setFediToken] = React.useState("");
   const [hydrated, setHydrated] = React.useState(false);
@@ -122,7 +122,7 @@ export function ProfileView() {
   });
 
   const createRepo = useMutation({
-    mutationFn: () => api.github.createRepo(repoName || "knot-notes", false),
+    mutationFn: () => api.github.createRepo(repoName || "ailo-notes", false),
     onSuccess: async (repo) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["github"] }),
@@ -315,7 +315,7 @@ export function ProfileView() {
           </div>
           <Text color="secondary">
             Connect your running FediPod agent — a personal ActivityPub server backed by your Solid
-            Pod. Knot reads your home timeline and shares stories to the Fediverse.
+            Pod. Ailo reads your home timeline and shares stories to the Fediverse.
           </Text>
           {fedi?.connected && fedi.account ? (
             <div className="flex flex-col gap-3">
@@ -432,7 +432,7 @@ export function ProfileView() {
                     <Input
                       value={repoName}
                       onChange={(event) => setRepoName(event.target.value)}
-                      placeholder="knot-notes"
+                      placeholder="ailo-notes"
                       className="flex-1"
                     />
                     <Button

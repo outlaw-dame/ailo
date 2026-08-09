@@ -2,14 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 
-import {
-  exportJWK,
-  generateKeyPair,
-  importJWK,
-  SignJWT,
-  type JWK,
-  type KeyLike,
-} from "jose";
+import { exportJWK, generateKeyPair, importJWK, SignJWT, type JWK, type KeyLike } from "jose";
 
 import { app, logger, safeStorage } from "@glaze/core/backend";
 import { PKCEClient } from "@glaze/core/oauth";
@@ -42,11 +35,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function base64Url(buffer: Buffer): string {
-  return buffer
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+  return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function webIdFromIdToken(idToken: string | null | undefined): string | null {
@@ -144,7 +133,11 @@ class SolidOAuthService {
     this.dpopPublicJwk.use = "sig";
   }
 
-  private async createDpopProof(method: string, url: string, accessToken?: string): Promise<string> {
+  private async createDpopProof(
+    method: string,
+    url: string,
+    accessToken?: string,
+  ): Promise<string> {
     await this.ensureDpopKeys();
     if (!this.dpopPrivateKey || !this.dpopPublicJwk) {
       throw new Error("DPoP keys are not available");
@@ -182,7 +175,7 @@ class SolidOAuthService {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        client_name: "Knot",
+        client_name: "Ailo",
         application_type: "native",
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],

@@ -35,13 +35,13 @@ function postToMarkdown(post: Post): string {
 }
 
 /**
- * Resolve a writable container for Knot posts.
+ * Resolve a writable container for Ailo posts.
  * Preference order: user-configured pod root → WebID profile storage hint → WebID origin /public/
  */
 async function resolvePostsContainer(): Promise<string> {
   const profile = await profileStore.get();
   if (profile.solidPodRoot.trim()) {
-    return ensureTrailingSlash(`${ensureTrailingSlash(profile.solidPodRoot.trim())}knot/posts`);
+    return ensureTrailingSlash(`${ensureTrailingSlash(profile.solidPodRoot.trim())}ailo/posts`);
   }
 
   const session = await solidOAuth.getSession();
@@ -54,11 +54,12 @@ async function resolvePostsContainer(): Promise<string> {
     });
     if (response.ok) {
       const turtle = await response.text();
-      const match = turtle.match(/<([^>]+)>\s+;?\s*pim:storage\s+<([^>]+)>/i)
-        ?? turtle.match(/pim:storage\s+<([^>]+)>/i);
+      const match =
+        turtle.match(/<([^>]+)>\s+;?\s*pim:storage\s+<([^>]+)>/i) ??
+        turtle.match(/pim:storage\s+<([^>]+)>/i);
       const storage = match?.[2] ?? match?.[1];
       if (storage) {
-        return ensureTrailingSlash(`${ensureTrailingSlash(storage)}knot/posts`);
+        return ensureTrailingSlash(`${ensureTrailingSlash(storage)}ailo/posts`);
       }
     }
   } catch {
@@ -66,7 +67,7 @@ async function resolvePostsContainer(): Promise<string> {
   }
 
   const origin = new URL(session.webId).origin;
-  return ensureTrailingSlash(`${origin}/public/knot/posts`);
+  return ensureTrailingSlash(`${origin}/public/ailo/posts`);
 }
 
 async function ensureContainer(containerUrl: string): Promise<void> {
@@ -146,7 +147,7 @@ class SolidService {
     // Remember pod root if user had not set one.
     const profile = await profileStore.get();
     if (!profile.solidPodRoot) {
-      const root = container.replace(/knot\/posts\/?$/, "");
+      const root = container.replace(/ailo\/posts\/?$/, "");
       await profileStore.update({ solidPodRoot: root });
     }
 

@@ -176,7 +176,11 @@ class FediPodService {
       this.cachedToken = await safeStorage.decryptString(encrypted);
       return this.cachedToken;
     } catch (error) {
-      if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
         return null;
       }
       logger.warn("fedipod", `Failed to read token: ${String(error)}`);
@@ -288,7 +292,9 @@ class FediPodService {
 
   /* -------------------------------- reads -------------------------------- */
 
-  async fetchHomeTimeline(options: { maxId?: string; limit?: number } = {}): Promise<MastodonStatus[]> {
+  async fetchHomeTimeline(
+    options: { maxId?: string; limit?: number } = {},
+  ): Promise<MastodonStatus[]> {
     const params = new URLSearchParams({ limit: String(options.limit ?? 20) });
     if (options.maxId) params.set("max_id", options.maxId);
     const raw = await this.authed(`/api/v1/timelines/home?${params.toString()}`);
@@ -371,7 +377,7 @@ class FediPodService {
     }
   }
 
-  /** Share a Knot story to the Fediverse, carrying CW + image alt text. */
+  /** Share an Ailo story to the Fediverse, carrying CW + image alt text. */
   async crossPostStory(
     post: Post,
     visibility: FediverseVisibility = "public",

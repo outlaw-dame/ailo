@@ -51,7 +51,12 @@ function postToMarkdown(post: Post): string {
     `id: ${post.id}`,
     post.contentWarning ? `content_warning: ${JSON.stringify(post.contentWarning)}` : null,
     tags ? `tags: [${post.tags.map((tag) => JSON.stringify(tag)).join(", ")}]` : null,
-    altBlock ? `alt_texts: |\n${altBlock.split("\n").map((line) => `  ${line}`).join("\n")}` : null,
+    altBlock
+      ? `alt_texts: |\n${altBlock
+          .split("\n")
+          .map((line) => `  ${line}`)
+          .join("\n")}`
+      : null,
     "---",
     "",
   ]
@@ -154,7 +159,7 @@ class GitHubService {
   }
 
   async createRepo(name: string, isPrivate = false): Promise<GitHubRepoSummary> {
-    const clean = name.trim().replace(/\s+/g, "-").toLowerCase() || "knot-blog";
+    const clean = name.trim().replace(/\s+/g, "-").toLowerCase() || "ailo-blog";
     const data = await this.request<{
       name: string;
       full_name: string;
@@ -165,7 +170,7 @@ class GitHubService {
       method: "POST",
       body: JSON.stringify({
         name: clean,
-        description: "Knowledge shared with Knot — decentralized notes published as Markdown",
+        description: "Knowledge shared with Ailo — decentralized notes published as Markdown",
         private: isPrivate,
         auto_init: true,
         has_issues: false,
@@ -200,9 +205,7 @@ class GitHubService {
     const date = (post.publishedAt ?? post.updatedAt).slice(0, 10);
     const filePath = `posts/${date}-${slugify(post.title)}-${post.id.slice(0, 8)}.md`;
     const content = Buffer.from(postToMarkdown(post), "utf-8").toString("base64");
-    const message = post.githubPath
-      ? `Update post: ${post.title}`
-      : `Publish post: ${post.title}`;
+    const message = post.githubPath ? `Update post: ${post.title}` : `Publish post: ${post.title}`;
 
     let sha: string | undefined;
     try {
@@ -224,8 +227,8 @@ class GitHubService {
         content,
         sha,
         committer: {
-          name: "Knot",
-          email: "knot@users.noreply.github.com",
+          name: "Ailo",
+          email: "ailo@users.noreply.github.com",
         },
       }),
     });

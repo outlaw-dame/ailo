@@ -1,4 +1,4 @@
-/** Shared domain types for Knot. */
+/** Shared domain types for Ailo. */
 
 export interface ImageAltText {
   /** Stable key: image URL or markdown src */
