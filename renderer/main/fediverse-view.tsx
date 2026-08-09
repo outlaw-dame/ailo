@@ -1,25 +1,22 @@
 import * as React from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AtSign, Bell, Home, RefreshCw, Send, X } from "lucide-react";
+import { AtSign, Bell, Home, RefreshCw } from "lucide-react";
 import {
   Button,
   EmptyState,
-  Input,
-  Label,
   ScrollArea,
   SegmentedControl,
   SegmentedControlItem,
-  Switch,
   Text,
-  Textarea,
-  toast,
 } from "@glaze/core/components";
 
+import { FediverseComposer } from "../components/fediverse-composer";
+import { FloatingComposeButton } from "../components/floating-compose-button";
 import { StatusCard } from "../components/status-card";
 import { api } from "../lib/api";
 import { formatRelativeDate } from "../lib/markdown";
-import type { FediverseVisibility, MastodonStatus } from "../lib/types";
+import type { MastodonStatus } from "../lib/types";
 
 type Tab = "home" | "notifications";
 
@@ -66,10 +63,7 @@ export function FediverseView() {
   const connected = Boolean(statusQuery.data?.connected);
 
   const [tab, setTab] = React.useState<Tab>("home");
-  const [text, setText] = React.useState("");
-  const [cwEnabled, setCwEnabled] = React.useState(false);
-  const [cw, setCw] = React.useState("");
-  const [visibility, setVisibility] = React.useState<FediverseVisibility>("public");
+  const [composerOpen, setComposerOpen] = React.useState(false);
   const [replyTo, setReplyTo] = React.useState<MastodonStatus | null>(null);
 
   const timelineQuery = useQuery({
@@ -83,31 +77,45 @@ export function FediverseView() {
     enabled: connected,
   });
 
-  const post = useMutation({
-    mutationFn: () =>
-      api.fedipod.post({
-        status: text.trim(),
-        spoilerText: cwEnabled ? cw.trim() || "Sensitive content" : null,
-        visibility,
-        inReplyToId: replyTo?.id ?? null,
-      }),
-    onSuccess: async () => {
-      setText("");
-      setCw("");
-      setCwEnabled(false);
-      setReplyTo(null);
-      await queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] });
-      await queryClient.invalidateQueries({ queryKey: ["fedipod", "notifications"] });
-      toast.success("Posted to the Fediverse");
-    },
-    onError: (e: Error) => toast.error(e.message || "Could not post"),
-  });
-
   const refresh = () => {
     void queryClient.invalidateQueries({
       queryKey: ["fedipod", tab === "home" ? "timeline" : "notifications"],
     });
   };
+
+  const openCompose = () => {
+    setReplyTo(null);
+    setComposerOpen(true);
+  };
+  const openReply = (status: MastodonStatus) => {
+    setReplyTo(status);
+    setComposerOpen(true);
+  };
+  const handleComposerOpenChange = (next: boolean) => {
+    setComposerOpen(next);
+    if (!next) setReplyTo(null);
+  };
+
+  // Hide the floating compose button while the feed is actively scrolling and
+  // bring it back once scrolling settles.
+  const viewportRef = React.useRef<HTMLDivElement | null>(null);
+  const [feedIdle, setFeedIdle] = React.useState(true);
+
+  React.useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const handleScroll = () => {
+      setFeedIdle(false);
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(() => setFeedIdle(true), 500);
+    };
+    node.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      node.removeEventListener("scroll", handleScroll);
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [connected]);
 
   if (!connected) {
     return (
@@ -138,148 +146,96 @@ export function FediverseView() {
   const notifications = notificationsQuery.data ?? [];
 
   return (
-    <ScrollArea
-      title="Fediverse"
-      subtitle={account ? `@${account.acct || account.username}` : "Your home timeline"}
-      actions={
-        <div className="flex items-center gap-1.5">
-          <SegmentedControl
-            size="small"
-            value={tab}
-            onValueChange={(v) => setTab(v as Tab)}
-            aria-label="Fediverse tab"
-          >
-            <SegmentedControlItem value="home">
-              <Home />
-              Home
-            </SegmentedControlItem>
-            <SegmentedControlItem value="notifications">
-              <Bell />
-              Alerts
-            </SegmentedControlItem>
-          </SegmentedControl>
-          <Button size="small" variant="filled" iconOnly aria-label="Refresh" onClick={refresh}>
-            <RefreshCw />
-          </Button>
-        </div>
-      }
-      className="h-full"
-    >
-      <div className="flex max-w-2xl flex-col gap-5 px-6 py-4">
-        <div className="flex flex-col gap-3 rounded-card border border-secondary bg-well/40 px-4 py-3.5">
-          {replyTo ? (
-            <div className="flex items-center gap-2">
-              <Text variant="small" color="tertiary" truncate className="min-w-0 flex-1">
-                Replying to @{replyTo.account.acct || replyTo.account.username}
-              </Text>
-              <Button
-                size="small"
-                variant="transparent"
-                iconOnly
-                aria-label="Cancel reply"
-                onClick={() => setReplyTo(null)}
-              >
-                <X />
-              </Button>
-            </div>
-          ) : null}
-          {cwEnabled ? (
-            <Input
-              value={cw}
-              onChange={(e) => setCw(e.target.value)}
-              placeholder="Content warning"
-            />
-          ) : null}
-          <Textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={replyTo ? "Write your reply…" : "Share something with the Fediverse…"}
-            size="large"
-          />
-          <div className="flex flex-wrap items-center gap-2">
+    <div className="relative h-full">
+      <ScrollArea
+        ref={viewportRef}
+        title="Fediverse"
+        subtitle={account ? `@${account.acct || account.username}` : "Your home timeline"}
+        actions={
+          <div className="flex items-center gap-1.5">
             <SegmentedControl
               size="small"
-              value={visibility}
-              onValueChange={(v) => setVisibility(v as FediverseVisibility)}
-              aria-label="Visibility"
+              value={tab}
+              onValueChange={(v) => setTab(v as Tab)}
+              aria-label="Fediverse tab"
             >
-              <SegmentedControlItem value="public">Public</SegmentedControlItem>
-              <SegmentedControlItem value="unlisted">Unlisted</SegmentedControlItem>
-              <SegmentedControlItem value="private">Followers</SegmentedControlItem>
+              <SegmentedControlItem value="home">
+                <Home />
+                Home
+              </SegmentedControlItem>
+              <SegmentedControlItem value="notifications">
+                <Bell />
+                Alerts
+              </SegmentedControlItem>
             </SegmentedControl>
-            <Label className="ml-1 gap-2">
-              <Switch
-                checked={cwEnabled}
-                onCheckedChange={setCwEnabled}
-                aria-label="Content warning"
-              />
-              CW
-            </Label>
-            <Button
-              size="small"
-              variant="accent"
-              className="ml-auto"
-              disabled={post.isPending || !text.trim()}
-              onClick={() => post.mutate()}
-            >
-              <Send />
-              {replyTo ? "Reply" : "Post"}
+            <Button size="small" variant="filled" iconOnly aria-label="Refresh" onClick={refresh}>
+              <RefreshCw />
             </Button>
           </div>
-        </div>
-
-        {tab === "home" ? (
-          timelineQuery.isLoading ? (
+        }
+        className="h-full"
+      >
+        <div className="flex max-w-2xl flex-col gap-5 px-6 py-4">
+          {tab === "home" ? (
+            timelineQuery.isLoading ? (
+              <FeedSkeleton />
+            ) : timelineQuery.isError ? (
+              <ErrorNote message={(timelineQuery.error as Error).message} onRetry={refresh} />
+            ) : timeline.length === 0 ? (
+              <Text color="tertiary" className="px-1 py-8 text-center">
+                Your home timeline is quiet. Follow people to see their posts here.
+              </Text>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {timeline.map((s) => (
+                  <StatusCard key={s.id} status={s} onReply={openReply} />
+                ))}
+              </div>
+            )
+          ) : notificationsQuery.isLoading ? (
             <FeedSkeleton />
-          ) : timelineQuery.isError ? (
-            <ErrorNote message={(timelineQuery.error as Error).message} onRetry={refresh} />
-          ) : timeline.length === 0 ? (
+          ) : notificationsQuery.isError ? (
+            <ErrorNote message={(notificationsQuery.error as Error).message} onRetry={refresh} />
+          ) : notifications.length === 0 ? (
             <Text color="tertiary" className="px-1 py-8 text-center">
-              Your home timeline is quiet. Follow people to see their posts here.
+              No notifications yet.
             </Text>
           ) : (
             <div className="flex flex-col gap-3">
-              {timeline.map((s) => (
-                <StatusCard key={s.id} status={s} onReply={setReplyTo} />
+              {notifications.map((n) => (
+                <div key={n.id} className="flex flex-col gap-2">
+                  <div className="flex min-w-0 items-center gap-2 px-1">
+                    <img
+                      src={n.account.avatar}
+                      alt=""
+                      className="size-6 shrink-0 rounded-full bg-control-subtle object-cover"
+                    />
+                    <Text variant="small" truncate className="min-w-0 flex-1">
+                      <Text as="span" variant="small-strong">
+                        {n.account.displayName}
+                      </Text>{" "}
+                      <Text as="span" color="tertiary">
+                        {NOTIFICATION_LABEL[n.type] ?? n.type}
+                      </Text>
+                    </Text>
+                    <Text variant="mini" color="quaternary" className="shrink-0 tabular-nums">
+                      {formatRelativeDate(n.createdAt)}
+                    </Text>
+                  </div>
+                  {n.status ? <StatusCard status={n.status} onReply={openReply} /> : null}
+                </div>
               ))}
             </div>
-          )
-        ) : notificationsQuery.isLoading ? (
-          <FeedSkeleton />
-        ) : notificationsQuery.isError ? (
-          <ErrorNote message={(notificationsQuery.error as Error).message} onRetry={refresh} />
-        ) : notifications.length === 0 ? (
-          <Text color="tertiary" className="px-1 py-8 text-center">
-            No notifications yet.
-          </Text>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {notifications.map((n) => (
-              <div key={n.id} className="flex flex-col gap-2">
-                <div className="flex min-w-0 items-center gap-2 px-1">
-                  <img
-                    src={n.account.avatar}
-                    alt=""
-                    className="size-6 shrink-0 rounded-full bg-control-subtle object-cover"
-                  />
-                  <Text variant="small" truncate className="min-w-0 flex-1">
-                    <Text as="span" variant="small-strong">
-                      {n.account.displayName}
-                    </Text>{" "}
-                    <Text as="span" color="tertiary">
-                      {NOTIFICATION_LABEL[n.type] ?? n.type}
-                    </Text>
-                  </Text>
-                  <Text variant="mini" color="quaternary" className="shrink-0 tabular-nums">
-                    {formatRelativeDate(n.createdAt)}
-                  </Text>
-                </div>
-                {n.status ? <StatusCard status={n.status} onReply={setReplyTo} /> : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </ScrollArea>
+          )}
+        </div>
+      </ScrollArea>
+      <FloatingComposeButton visible={feedIdle} onClick={openCompose} />
+      <FediverseComposer
+        open={composerOpen}
+        onOpenChange={handleComposerOpenChange}
+        replyTo={replyTo}
+        onCancelReply={() => setReplyTo(null)}
+      />
+    </div>
   );
 }
