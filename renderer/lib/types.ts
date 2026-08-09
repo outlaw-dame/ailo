@@ -114,6 +114,9 @@ export interface MastodonFilterKeyword {
   id: string;
   keyword: string;
   wholeWord: boolean;
+  /** Ailo/FediPod extension: compare sentence meaning in addition to Mastodon's exact match. */
+  semantic: boolean;
+  semanticThreshold: number | null;
 }
 
 export interface MastodonFilter {

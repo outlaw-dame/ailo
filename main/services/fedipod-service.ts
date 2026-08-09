@@ -105,6 +105,9 @@ function mapFilter(raw: unknown): MastodonFilter {
         id: str(keyword.id),
         keyword: str(keyword.keyword),
         wholeWord: bool(keyword.whole_word),
+        semantic: bool(keyword.semantic),
+        semanticThreshold: typeof keyword.semantic_threshold === "number"
+          ? keyword.semantic_threshold : null,
       };
     }),
   };
@@ -447,6 +450,8 @@ class FediPodService {
     title: string;
     keyword: string;
     wholeWord?: boolean;
+    semantic?: boolean;
+    semanticThreshold?: number;
     action?: "warn" | "hide";
   }): Promise<MastodonFilter> {
     const raw = await this.authed("/api/v2/filters", {
@@ -459,6 +464,8 @@ class FediPodService {
         keywords_attributes: [{
           keyword: input.keyword.trim(),
           whole_word: input.wholeWord ?? false,
+          semantic: input.semantic ?? true,
+          semantic_threshold: input.semanticThreshold ?? 0.55,
         }],
       }),
     });

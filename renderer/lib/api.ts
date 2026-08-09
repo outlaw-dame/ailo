@@ -92,6 +92,8 @@ export const api = {
       title: string;
       keyword: string;
       wholeWord?: boolean;
+      semantic?: boolean;
+      semanticThreshold?: number;
       action?: "warn" | "hide";
     }) => ipc().invoke("fedipod:createFilter", input) as Promise<MastodonFilter>,
     deleteFilter: (id: string) =>

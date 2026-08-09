@@ -20,6 +20,7 @@ import { StatusCard } from "../components/status-card";
 import { FediverseModeration } from "../components/fediverse-moderation";
 import { api } from "../lib/api";
 import { formatRelativeDate } from "../lib/markdown";
+import { semanticFilterService } from "../lib/semantic-filter-service";
 import type {
   FediverseContentType,
   FediverseObjectType,
@@ -84,12 +85,29 @@ export function FediverseView() {
 
   const timelineQuery = useQuery({
     queryKey: ["fedipod", "timeline"],
-    queryFn: () => api.fedipod.timeline(),
+    queryFn: async () => {
+      const [statuses, filters] = await Promise.all([
+        api.fedipod.timeline(),
+        api.fedipod.filters(),
+      ]);
+      return semanticFilterService.apply(statuses, filters, "home");
+    },
     enabled: connected,
   });
   const notificationsQuery = useQuery({
     queryKey: ["fedipod", "notifications"],
-    queryFn: () => api.fedipod.notifications(),
+    queryFn: async () => {
+      const [notifications, filters] = await Promise.all([
+        api.fedipod.notifications(),
+        api.fedipod.filters(),
+      ]);
+      await semanticFilterService.apply(
+        notifications.flatMap((notification) => notification.status ? [notification.status] : []),
+        filters,
+        "notifications",
+      );
+      return notifications;
+    },
     enabled: connected,
   });
   const capabilitiesQuery = useQuery({

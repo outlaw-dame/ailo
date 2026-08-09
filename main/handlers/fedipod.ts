@@ -98,6 +98,9 @@ export function registerFediPodHandlers(): void {
       title: requireString(data.title, "Filter title"),
       keyword: requireString(data.keyword, "Filter keyword"),
       wholeWord: data.wholeWord === true,
+      semantic: data.semantic !== false,
+      semanticThreshold: typeof data.semanticThreshold === "number"
+        ? Math.min(0.9, Math.max(0.3, data.semanticThreshold)) : 0.55,
       action: data.action === "hide" ? "hide" : "warn",
     });
   });

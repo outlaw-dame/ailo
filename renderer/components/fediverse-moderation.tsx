@@ -14,6 +14,7 @@ import {
 } from "@glaze/core/components";
 
 import { api } from "../lib/api";
+import { semanticFilterService } from "../lib/semantic-filter-service";
 import type { MastodonAccount } from "../lib/types";
 
 function AccountRow({
@@ -43,6 +44,7 @@ export function FediverseModeration() {
   const [keyword, setKeyword] = React.useState("");
   const [wholeWord, setWholeWord] = React.useState(false);
   const [action, setAction] = React.useState<"warn" | "hide">("warn");
+  const [semanticThreshold, setSemanticThreshold] = React.useState("0.55");
 
   const blocks = useQuery({ queryKey: ["fedipod", "blocks"], queryFn: api.fedipod.blocks });
   const mutes = useQuery({ queryKey: ["fedipod", "mutes"], queryFn: api.fedipod.mutes });
@@ -69,13 +71,23 @@ export function FediverseModeration() {
     onError: (error: Error) => toast.error(error.message),
   });
   const createFilter = useMutation({
-    mutationFn: () => api.fedipod.createFilter({ title, keyword, wholeWord, action }),
+    mutationFn: async () => {
+      await semanticFilterService.ensureAvailable();
+      return api.fedipod.createFilter({
+        title,
+        keyword,
+        wholeWord,
+        action,
+        semantic: true,
+        semanticThreshold: Number(semanticThreshold),
+      });
+    },
     onSuccess: async () => {
       setTitle("");
       setKeyword("");
       setWholeWord(false);
       await refresh();
-      toast.success("Keyword filter created");
+      toast.success("Semantic filter created");
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -102,7 +114,11 @@ export function FediverseModeration() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <div className="flex items-center gap-2"><ListFilter className="size-4" /><Text variant="strong">Keyword filters</Text></div>
+        <div className="flex items-center gap-2"><ListFilter className="size-4" /><Text variant="strong">Semantic filters</Text></div>
+        <Text variant="small" color="tertiary">
+          Match the exact text, hashtag, whole word, or phrase—and posts with the same meaning.
+          Semantic analysis runs locally; the model downloads once when you add your first filter.
+        </Text>
         <div className="grid gap-2 sm:grid-cols-2">
           <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Filter name" aria-label="Filter name" maxLength={200} />
           <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Keyword or phrase" aria-label="Filter keyword" maxLength={500} />
@@ -112,7 +128,12 @@ export function FediverseModeration() {
             <SegmentedControlItem value="warn">Warn</SegmentedControlItem>
             <SegmentedControlItem value="hide">Hide</SegmentedControlItem>
           </SegmentedControl>
-          <Label className="gap-2"><Switch checked={wholeWord} onCheckedChange={setWholeWord} />Whole word</Label>
+          <SegmentedControl size="small" value={semanticThreshold} onValueChange={setSemanticThreshold} aria-label="Semantic sensitivity">
+            <SegmentedControlItem value="0.65">Strict</SegmentedControlItem>
+            <SegmentedControlItem value="0.55">Balanced</SegmentedControlItem>
+            <SegmentedControlItem value="0.45">Broad</SegmentedControlItem>
+          </SegmentedControl>
+          <Label className="gap-2"><Switch checked={wholeWord} onCheckedChange={setWholeWord} />Whole-word exact match</Label>
           <Button className="ml-auto" size="small" variant="accent" disabled={createFilter.isPending || !title.trim() || !keyword.trim()} onClick={() => createFilter.mutate()}>
             Add filter
           </Button>
@@ -123,6 +144,7 @@ export function FediverseModeration() {
               <div className="flex flex-wrap items-center gap-2">
                 <Text variant="small">{filter.title}</Text>
                 <Badge size="small" color={filter.action === "hide" ? "red" : "blue"}>{filter.action}</Badge>
+                {filter.keywords.some((item) => item.semantic) ? <Badge size="small">semantic</Badge> : null}
               </div>
               <Text variant="mini" color="tertiary" truncate>{filter.keywords.map((item) => item.keyword).join(", ")}</Text>
             </div>
