@@ -56,7 +56,63 @@ export interface GitHubStatus {
   repo: string | null;
 }
 
+export type FediverseVisibility = "public" | "unlisted" | "private" | "direct";
+
+export interface MastodonAccount {
+  id: string;
+  username: string;
+  acct: string;
+  displayName: string;
+  url: string;
+  avatar: string;
+  note: string;
+  followersCount: number;
+  followingCount: number;
+}
+
+export interface MastodonMediaAttachment {
+  id: string;
+  type: string;
+  url: string;
+  previewUrl: string | null;
+  description: string | null;
+}
+
+export interface MastodonStatus {
+  id: string;
+  uri: string;
+  url: string | null;
+  createdAt: string;
+  content: string;
+  spoilerText: string;
+  visibility: string;
+  account: MastodonAccount;
+  mediaAttachments: MastodonMediaAttachment[];
+  favouritesCount: number;
+  reblogsCount: number;
+  repliesCount: number;
+  favourited: boolean;
+  reblogged: boolean;
+  inReplyToId: string | null;
+  reblog: MastodonStatus | null;
+}
+
+export interface MastodonNotification {
+  id: string;
+  type: string;
+  createdAt: string;
+  account: MastodonAccount;
+  status: MastodonStatus | null;
+}
+
+export interface FediPodStatus {
+  connected: boolean;
+  baseUrl: string;
+  account: MastodonAccount | null;
+}
+
 export interface PublishResults {
   solid?: { ok: true; url: string } | { ok: false; error: string };
   github?: { ok: true; path: string; htmlUrl: string } | { ok: false; error: string };
+  fediverse?: { ok: true; url: string | null } | { ok: false; error: string };
 }

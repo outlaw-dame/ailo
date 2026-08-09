@@ -128,12 +128,33 @@ export function EditorView() {
         if (result.results && "github" in result.results && result.results.github) {
           bits.push(result.results.github.ok ? "GitHub" : `GitHub failed`);
         }
+        if (result.results && "fediverse" in result.results && result.results.fediverse) {
+          bits.push(result.results.fediverse.ok ? "Fediverse" : `Fediverse failed`);
+        }
         toast.success(bits.join(" · "));
-        if (result.results && "solid" in result.results && result.results.solid && !result.results.solid.ok) {
+        if (
+          result.results &&
+          "solid" in result.results &&
+          result.results.solid &&
+          !result.results.solid.ok
+        ) {
           toast.error(result.results.solid.error);
         }
-        if (result.results && "github" in result.results && result.results.github && !result.results.github.ok) {
+        if (
+          result.results &&
+          "github" in result.results &&
+          result.results.github &&
+          !result.results.github.ok
+        ) {
           toast.error(result.results.github.error);
+        }
+        if (
+          result.results &&
+          "fediverse" in result.results &&
+          result.results.fediverse &&
+          !result.results.fediverse.ok
+        ) {
+          toast.error(result.results.fediverse.error);
         }
       } else {
         toast.success("Draft saved");
@@ -154,7 +175,10 @@ export function EditorView() {
       leading={
         <ToolbarBackButton
           onClick={() => {
-            void navigate({ to: isEditing && postId ? "/post/$postId" : "/", params: postId ? { postId } : undefined });
+            void navigate({
+              to: isEditing && postId ? "/post/$postId" : "/",
+              params: postId ? { postId } : undefined,
+            });
           }}
         />
       }
@@ -274,12 +298,11 @@ export function EditorView() {
           {altTexts.length === 0 ? (
             <div className="rounded-control border border-dashed border-secondary px-4 py-4 flex flex-col gap-3">
               <Text variant="small" color="secondary">
-                No images detected yet. Add Markdown images like
-                {" "}
+                No images detected yet. Add Markdown images like{" "}
                 <Text as="span" variant="small-mono" color="primary">
                   ![caption](url)
-                </Text>
-                {" "}or attach a source manually.
+                </Text>{" "}
+                or attach a source manually.
               </Text>
               <div className="flex items-center gap-2">
                 <Input
@@ -316,7 +339,12 @@ export function EditorView() {
                   className="rounded-control border border-secondary px-3 py-3 flex flex-col gap-2"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <Text variant="mini" color="tertiary" className="truncate min-w-0" title={entry.src}>
+                    <Text
+                      variant="mini"
+                      color="tertiary"
+                      className="truncate min-w-0"
+                      title={entry.src}
+                    >
                       {entry.src}
                     </Text>
                     <Button
@@ -377,7 +405,8 @@ export function EditorView() {
         </div>
 
         <Text variant="small" color="quaternary">
-          Publish keeps a local copy, then shares to any connected Solid Pod and GitHub repository.
+          Publish keeps a local copy, then shares to any connected Solid Pod, GitHub repository, and
+          FediPod (Fediverse).
         </Text>
       </div>
     </ScrollArea>

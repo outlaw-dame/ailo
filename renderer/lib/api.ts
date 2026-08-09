@@ -1,7 +1,12 @@
 import type {
+  FediPodStatus,
+  FediverseVisibility,
   GitHubRepoSummary,
   GitHubStatus,
   ImageAltText,
+  MastodonAccount,
+  MastodonNotification,
+  MastodonStatus,
   Post,
   Profile,
   PublishResults,
@@ -30,8 +35,7 @@ export const api = {
   },
   profile: {
     get: () => ipc().invoke("profile:get") as Promise<Profile>,
-    update: (patch: Partial<Profile>) =>
-      ipc().invoke("profile:update", patch) as Promise<Profile>,
+    update: (patch: Partial<Profile>) => ipc().invoke("profile:update", patch) as Promise<Profile>,
   },
   github: {
     connect: () =>
@@ -57,5 +61,37 @@ export const api = {
   publish: {
     post: (postId: string) =>
       ipc().invoke("publish:post", postId) as Promise<{ post: Post; results: PublishResults }>,
+  },
+  fedipod: {
+    status: () => ipc().invoke("fedipod:status") as Promise<FediPodStatus>,
+    connect: (baseUrl: string, token: string) =>
+      ipc().invoke("fedipod:connect", baseUrl, token) as Promise<{
+        connected: true;
+        account: MastodonAccount;
+      }>,
+    disconnect: () => ipc().invoke("fedipod:disconnect") as Promise<{ connected: false }>,
+    timeline: (options?: { maxId?: string; limit?: number }) =>
+      ipc().invoke("fedipod:timeline", options ?? {}) as Promise<MastodonStatus[]>,
+    notifications: () => ipc().invoke("fedipod:notifications") as Promise<MastodonNotification[]>,
+    post: (input: {
+      status: string;
+      spoilerText?: string | null;
+      visibility?: FediverseVisibility;
+      inReplyToId?: string | null;
+    }) => ipc().invoke("fedipod:post", input) as Promise<MastodonStatus>,
+    favourite: (id: string, active: boolean) =>
+      ipc().invoke("fedipod:favourite", id, active) as Promise<MastodonStatus>,
+    boost: (id: string, active: boolean) =>
+      ipc().invoke("fedipod:boost", id, active) as Promise<MastodonStatus>,
+    follow: (id: string, active: boolean) =>
+      ipc().invoke("fedipod:follow", id, active) as Promise<{ following: boolean }>,
+    crossPost: (postId: string, visibility?: FediverseVisibility) =>
+      ipc().invoke("fedipod:crossPost", postId, visibility) as Promise<{
+        id: string;
+        url: string | null;
+      }>,
+  },
+  app: {
+    openExternal: (url: string) => ipc().invoke("app:openExternal", url) as Promise<{ ok: true }>,
   },
 };

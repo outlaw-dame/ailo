@@ -1,5 +1,6 @@
 import { ipcMain, logger } from "@glaze/core/backend";
 
+import { fediPodService } from "../services/fedipod-service.js";
 import { githubService } from "../services/github-service.js";
 import { postsStore } from "../services/posts-store.js";
 import { profileStore } from "../services/profile-store.js";
@@ -24,6 +25,7 @@ export function registerPublishHandlers(): void {
       const results: {
         solid?: { ok: true; url: string } | { ok: false; error: string };
         github?: { ok: true; path: string; htmlUrl: string } | { ok: false; error: string };
+        fediverse?: { ok: true; url: string | null } | { ok: false; error: string };
       } = {};
 
       const solidStatus = await solidService.getStatus();
@@ -45,6 +47,19 @@ export function registerPublishHandlers(): void {
           results.github = { ok: true, path: github.path, htmlUrl: github.htmlUrl };
         } catch (error) {
           results.github = {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+
+      const fediConnected = await fediPodService.isConnected();
+      if (fediConnected) {
+        try {
+          const fedi = await fediPodService.crossPostStory(updated, "public");
+          results.fediverse = { ok: true, url: fedi.url };
+        } catch (error) {
+          results.fediverse = {
             ok: false,
             error: error instanceof Error ? error.message : String(error),
           };

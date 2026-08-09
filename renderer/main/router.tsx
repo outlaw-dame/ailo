@@ -9,6 +9,7 @@ import { ErrorBoundaryView } from "@glaze/core/components";
 
 import { EditorView } from "./editor-view";
 import { FeedView } from "./feed-view";
+import { FediverseView } from "./fediverse-view";
 import { PostDetailView } from "./post-detail-view";
 import { ProfileView } from "./profile-view";
 import { RootView } from "./root-view";
@@ -63,11 +64,19 @@ const profileRoute = createRoute({
   staticData: { title: "Profile" },
 });
 
+const fediverseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/fediverse",
+  component: FediverseView,
+  staticData: { title: "Fediverse" },
+});
+
 const routeTree = rootRoute.addChildren([
   feedRoute,
   writeRoute,
   editRoute,
   postRoute,
+  fediverseRoute,
   profileRoute,
 ]);
 

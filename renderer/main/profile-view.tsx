@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Github, Globe2, Link2, Unplug } from "lucide-react";
+import { AtSign, CalendarDays, Github, Globe2, Link2, Unplug } from "lucide-react";
 import {
   Badge,
   Button,
@@ -45,6 +45,10 @@ export function ProfileView() {
     queryKey: ["solid", "status"],
     queryFn: () => api.solid.status(),
   });
+  const fediQuery = useQuery({
+    queryKey: ["fedipod", "status"],
+    queryFn: () => api.fedipod.status(),
+  });
   const reposQuery = useQuery({
     queryKey: ["github", "repos"],
     queryFn: () => api.github.listRepos(),
@@ -57,7 +61,14 @@ export function ProfileView() {
   const [solidIssuer, setSolidIssuer] = React.useState("https://login.inrupt.com");
   const [solidPodRoot, setSolidPodRoot] = React.useState("");
   const [repoName, setRepoName] = React.useState("knot-notes");
+  const [fediBaseUrl, setFediBaseUrl] = React.useState("http://localhost:8030");
+  const [fediToken, setFediToken] = React.useState("");
   const [hydrated, setHydrated] = React.useState(false);
+
+  React.useEffect(() => {
+    const url = fediQuery.data?.baseUrl;
+    if (url) setFediBaseUrl(url);
+  }, [fediQuery.data?.baseUrl]);
 
   React.useEffect(() => {
     const profile = profileQuery.data;
@@ -158,13 +169,31 @@ export function ProfileView() {
     onError: (error: Error) => toast.error(error.message || "Could not disconnect Solid"),
   });
 
+  const fediConnect = useMutation({
+    mutationFn: () => api.fedipod.connect(fediBaseUrl.trim(), fediToken.trim()),
+    onSuccess: async (result) => {
+      setFediToken("");
+      await queryClient.invalidateQueries({ queryKey: ["fedipod"] });
+      toast.success(`Connected as @${result.account.acct || result.account.username}`);
+    },
+    onError: (error: Error) => toast.error(error.message || "FediPod connection failed"),
+  });
+
+  const fediDisconnect = useMutation({
+    mutationFn: () => api.fedipod.disconnect(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["fedipod"] });
+      toast.success("FediPod disconnected");
+    },
+    onError: (error: Error) => toast.error(error.message || "Could not disconnect FediPod"),
+  });
+
   const calPath = normalizeCalPath(calComPath);
-  const calEmbedUrl = calPath
-    ? `https://cal.com/${calPath}?embed=true&theme=auto`
-    : null;
+  const calEmbedUrl = calPath ? `https://cal.com/${calPath}?embed=true&theme=auto` : null;
 
   const github = githubQuery.data;
   const solid = solidQuery.data;
+  const fedi = fediQuery.data;
 
   return (
     <ScrollArea title="You" subtitle="Identity, destinations, and booking" className="h-full">
@@ -209,7 +238,11 @@ export function ProfileView() {
           <div className="flex items-center gap-2">
             <Globe2 className="size-4 text-secondary shrink-0" />
             <Text variant="heading2">Solid Pod</Text>
-            {solid?.connected ? <Badge color="green">Connected</Badge> : <Badge>Not connected</Badge>}
+            {solid?.connected ? (
+              <Badge color="green">Connected</Badge>
+            ) : (
+              <Badge>Not connected</Badge>
+            )}
           </div>
           <Text color="secondary">
             Sign in with your WebID. Published notes are saved as Markdown files in your Pod.
@@ -272,9 +305,101 @@ export function ProfileView() {
 
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
+            <AtSign className="size-4 text-secondary shrink-0" />
+            <Text variant="heading2">FediPod</Text>
+            {fedi?.connected ? (
+              <Badge color="green">Connected</Badge>
+            ) : (
+              <Badge>Not connected</Badge>
+            )}
+          </div>
+          <Text color="secondary">
+            Connect your running FediPod agent — a personal ActivityPub server backed by your Solid
+            Pod. Knot reads your home timeline and shares stories to the Fediverse.
+          </Text>
+          {fedi?.connected && fedi.account ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {fedi.account.avatar ? (
+                  <img
+                    src={fedi.account.avatar}
+                    alt=""
+                    className="size-8 rounded-full shrink-0 object-cover"
+                  />
+                ) : null}
+                <div className="min-w-0">
+                  <Text variant="strong" truncate>
+                    {fedi.account.displayName}
+                  </Text>
+                  <Text variant="small" color="tertiary" truncate>
+                    @{fedi.account.acct || fedi.account.username}
+                    {fedi.baseUrl ? ` · ${fedi.baseUrl}` : ""}
+                  </Text>
+                </div>
+              </div>
+              <div>
+                <Button
+                  size="small"
+                  variant="filled"
+                  disabled={fediDisconnect.isPending}
+                  onClick={() => fediDisconnect.mutate()}
+                >
+                  <Unplug />
+                  Disconnect
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <FieldGroup>
+                <Field
+                  label="FediPod URL"
+                  description="Where your FediPod agent is running. Default is http://localhost:8030."
+                  orientation="vertical"
+                >
+                  <Input
+                    value={fediBaseUrl}
+                    onChange={(event) => setFediBaseUrl(event.target.value)}
+                    placeholder="http://localhost:8030"
+                  />
+                </Field>
+                <Field
+                  label="Access token"
+                  description="A Mastodon-compatible access token from your FediPod instance."
+                  orientation="vertical"
+                >
+                  <Input
+                    type="password"
+                    value={fediToken}
+                    onChange={(event) => setFediToken(event.target.value)}
+                    placeholder="Paste your access token"
+                  />
+                </Field>
+              </FieldGroup>
+              <div>
+                <Button
+                  size="small"
+                  variant="accent"
+                  disabled={fediConnect.isPending || !fediBaseUrl.trim() || !fediToken.trim()}
+                  onClick={() => fediConnect.mutate()}
+                >
+                  <Link2 />
+                  Connect FediPod
+                </Button>
+              </div>
+            </>
+          )}
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
             <Github className="size-4 text-secondary shrink-0" />
             <Text variant="heading2">GitHub</Text>
-            {github?.connected ? <Badge color="green">Connected</Badge> : <Badge>Not connected</Badge>}
+            {github?.connected ? (
+              <Badge color="green">Connected</Badge>
+            ) : (
+              <Badge>Not connected</Badge>
+            )}
           </div>
           <Text color="secondary">
             Create or choose a repository. Each published note becomes a Markdown commit.
@@ -322,7 +447,9 @@ export function ProfileView() {
                 </Field>
                 <Field
                   label="Or choose existing"
-                  description={github.repo ? `Active: ${github.repo}` : "No repository selected yet."}
+                  description={
+                    github.repo ? `Active: ${github.repo}` : "No repository selected yet."
+                  }
                   orientation="vertical"
                 >
                   <select

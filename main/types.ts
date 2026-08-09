@@ -74,3 +74,81 @@ export const DEFAULT_PROFILE: Profile = {
   githubRepo: null,
   solidWebId: null,
 };
+
+/* -------------------------------------------------------------------------- */
+/*  FediPod / Fediverse (Mastodon client API)                                 */
+/* -------------------------------------------------------------------------- */
+
+/** Mastodon status visibility. */
+export type FediverseVisibility = "public" | "unlisted" | "private" | "direct";
+
+export interface MastodonAccount {
+  id: string;
+  username: string;
+  /** webfinger handle, e.g. "ada@pod.example" */
+  acct: string;
+  displayName: string;
+  url: string;
+  avatar: string;
+  note: string;
+  followersCount: number;
+  followingCount: number;
+}
+
+export interface MastodonMediaAttachment {
+  id: string;
+  type: string;
+  url: string;
+  previewUrl: string | null;
+  /** Alt text */
+  description: string | null;
+}
+
+export interface MastodonStatus {
+  id: string;
+  uri: string;
+  url: string | null;
+  createdAt: string;
+  /** HTML content (sanitize before rendering) */
+  content: string;
+  /** Content warning */
+  spoilerText: string;
+  visibility: string;
+  account: MastodonAccount;
+  mediaAttachments: MastodonMediaAttachment[];
+  favouritesCount: number;
+  reblogsCount: number;
+  repliesCount: number;
+  favourited: boolean;
+  reblogged: boolean;
+  inReplyToId: string | null;
+  /** Present when this status boosts another */
+  reblog: MastodonStatus | null;
+}
+
+export interface MastodonNotification {
+  id: string;
+  /** mention | reblog | favourite | follow | poll | status | update */
+  type: string;
+  createdAt: string;
+  account: MastodonAccount;
+  status: MastodonStatus | null;
+}
+
+export interface FediPodStatus {
+  connected: boolean;
+  baseUrl: string;
+  account: MastodonAccount | null;
+}
+
+export interface FediPodConfig {
+  version: 1;
+  baseUrl: string;
+  account: MastodonAccount | null;
+}
+
+export const DEFAULT_FEDIPOD_CONFIG: FediPodConfig = {
+  version: 1,
+  baseUrl: "",
+  account: null,
+};

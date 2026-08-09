@@ -8,6 +8,7 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 
 import { appHandlers } from "./app.js";
+import { registerFediPodHandlers } from "./fedipod.js";
 import { registerGitHubHandlers } from "./github.js";
 import { registerPostsHandlers } from "./posts.js";
 import { registerProfileHandlers } from "./profile.js";
@@ -51,6 +52,7 @@ export function registerHandlers(): void {
   registerProfileHandlers();
   registerGitHubHandlers();
   registerSolidHandlers();
+  registerFediPodHandlers();
   registerPublishHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");

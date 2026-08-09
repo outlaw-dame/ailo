@@ -63,6 +63,14 @@ export function renderMarkdown(markdown: string, altTexts: ImageAltText[] = []):
   });
 }
 
+/** Sanitize externally-sourced HTML (e.g. Mastodon status content) for rendering. */
+export function sanitizeHtml(html: string): string {
+  return DOMPurify.sanitize(html ?? "", {
+    USE_PROFILES: { html: true },
+    ADD_ATTR: ["target", "rel"],
+  });
+}
+
 export function excerptFromBody(body: string, max = 160): string {
   const plain = body
     .replace(/```[\s\S]*?```/g, " ")
