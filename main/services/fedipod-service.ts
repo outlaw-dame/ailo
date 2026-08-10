@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import * as crypto from "node:crypto";
 
 import { app, logger, safeStorage } from "@glaze/core/backend";
 
@@ -66,6 +67,11 @@ import {
 import { mapCreatorAttribution, mapCreatorCard } from "./fedipod-creator.js";
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
+
+type LocalPairingResult =
+  | { status: "unavailable" }
+  | { status: "password_required" }
+  | { status: "paired"; gateToken: string };
 
 /* ----------------------------- record helpers ---------------------------- */
 
@@ -340,6 +346,67 @@ class FediPodService {
     this.cachedGateToken = token;
   }
 
+  /** Pair with a same-machine FediPod without ever exposing its gate token to the UI. */
+  private async pairWithLocalFediPod(baseUrl: string, password?: string): Promise<LocalPairingResult> {
+    const desiredHost = new URL(baseUrl).host.toLowerCase();
+    const endpoint = "http://127.0.0.1:8030/admin/ailo-pair";
+    let availability: unknown;
+    try {
+      const response = await fetch(endpoint, {
+        headers: { Accept: "application/json" }, signal: AbortSignal.timeout(3_000),
+      });
+      if (!response.ok) return { status: "unavailable" };
+      availability = await response.json();
+    } catch {
+      return { status: "unavailable" };
+    }
+    if (!isRecord(availability)
+      || availability.ready !== true
+      || !Array.isArray(availability.allowedHosts)
+      || !availability.allowedHosts.every((host) => typeof host === "string")
+      || !availability.allowedHosts.includes(desiredHost)) return { status: "unavailable" };
+    if (!password) return { status: "password_required" };
+
+    const keys = crypto.generateKeyPairSync("x25519");
+    const clientPublicKey = keys.publicKey.export({ format: "der", type: "spki" }).toString("base64");
+    let response: Response;
+    let paired: unknown;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ password, clientPublicKey }), signal: AbortSignal.timeout(5_000),
+      });
+      paired = await response.json();
+    } catch (error) {
+      throw new Error(`Could not complete local FediPod pairing: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (response.status === 401) throw new Error("FediPod rejected that password.");
+    if (!response.ok || !isRecord(paired)) throw new Error(`Could not complete local FediPod pairing (${response.status}).`);
+    const fields = ["serverPublicKey", "iv", "ciphertext", "tag"] as const;
+    if (!fields.every((field) => typeof paired[field] === "string" && paired[field].length <= 2_048)) {
+      throw new Error("FediPod returned an invalid local pairing response.");
+    }
+    const payload = paired as Record<(typeof fields)[number], string>;
+    try {
+      const serverPublicKey = crypto.createPublicKey({
+        key: Buffer.from(payload.serverPublicKey, "base64"), format: "der", type: "spki",
+      });
+      if (serverPublicKey.asymmetricKeyType !== "x25519") throw new Error("unexpected key type");
+      const shared = crypto.diffieHellman({ privateKey: keys.privateKey, publicKey: serverPublicKey });
+      const key = crypto.createHash("sha256").update("FediPod Ailo pairing v1\0").update(shared).digest();
+      const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(payload.iv, "base64"));
+      decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
+      const gateToken = Buffer.concat([
+        decipher.update(Buffer.from(payload.ciphertext, "base64")), decipher.final(),
+      ]).toString("utf8");
+      if (!gateToken || gateToken.length > 1_024 || /[\x00-\x20\x7f]/.test(gateToken)) throw new Error("invalid token");
+      return { status: "paired", gateToken };
+    } catch {
+      throw new Error("Could not verify FediPod's local pairing response.");
+    }
+  }
+
   private async clearToken(): Promise<void> {
     this.cachedToken = null;
     await fs.rm(await this.resolveTokenPath(), { force: true });
@@ -436,7 +503,12 @@ class FediPodService {
     const baseUrl = normalizeBaseUrl(baseUrlInput);
     const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
     authorizeUrl.searchParams.set("redirect_uri", "urn:ietf:wg:oauth:2.0:oob");
-    const gateToken = gateTokenInput?.trim() || "";
+    let gateToken = gateTokenInput?.trim() || "";
+    if (!gateToken) {
+      const pairing = await this.pairWithLocalFediPod(baseUrl, password);
+      if (pairing.status === "password_required") return { status: "password_required" };
+      if (pairing.status === "paired") gateToken = pairing.gateToken;
+    }
 
     let response: Response;
     try {
