@@ -5,6 +5,10 @@ import type {
   AiModerationSuggestions,
   AiProvider,
   AiStatus,
+  ProviderCredential,
+  ProviderCredentialState,
+  ProviderCredentialsStatus,
+  ProviderCredentialTestResult,
   FediPodLoginResult,
   FediPodCapabilities,
   FediPodStatus,
@@ -177,11 +181,19 @@ export const api = {
   app: {
     openExternal: (url: string) => ipc().invoke("app:openExternal", url) as Promise<{ ok: true }>,
   },
-  // Provider-backed features. Keys live only in FediPod's own environment — every
-  // call here proxies through the existing authed FediPod connection, never
-  // storing or seeing a key on this side.
+  // Provider-backed features. Keys transit Ailo only when the user submits the
+  // password field, then remain in FediPod's owner-only local store. Stored
+  // values can never be read back through this API.
   ai: {
     status: () => ipc().invoke("fedipod:aiStatus") as Promise<AiStatus>,
+    credentials: () =>
+      ipc().invoke("fedipod:providerCredentials") as Promise<ProviderCredentialsStatus>,
+    saveCredential: (provider: ProviderCredential, apiKey: string) =>
+      ipc().invoke("fedipod:saveProviderCredential", provider, apiKey) as Promise<ProviderCredentialState>,
+    removeCredential: (provider: ProviderCredential) =>
+      ipc().invoke("fedipod:removeProviderCredential", provider) as Promise<ProviderCredentialState>,
+    testCredential: (provider: ProviderCredential, apiKey?: string) =>
+      ipc().invoke("fedipod:testProviderCredential", provider, apiKey) as Promise<ProviderCredentialTestResult>,
     translate: (text: string, targetLang: string, provider?: AiProvider) =>
       ipc().invoke("fedipod:aiTranslate", text, targetLang, provider) as Promise<string>,
     suggestHashtags: (text: string, provider?: AiProvider) =>

@@ -10,6 +10,10 @@ import type {
   AiModerationSuggestions,
   AiProvider,
   AiStatus,
+  ProviderCredential,
+  ProviderCredentialsStatus,
+  ProviderCredentialState,
+  ProviderCredentialTestResult,
   FediPodConfig,
   FediPodCapabilities,
   FediPodLoginResult,
@@ -55,6 +59,7 @@ import {
   mapFilterMatches,
   mapHashtagSuggestions,
   mapModerationSuggestions,
+  mapProviderCredentials,
   mapSafeBrowsingResult,
   mapTranslation,
 } from "./fedipod-ai.js";
@@ -576,6 +581,43 @@ class FediPodService {
 
   async aiStatus(): Promise<AiStatus> {
     return mapAiStatus(await this.authed("/api/v1/ailo/ai/status"));
+  }
+
+  async providerCredentials(): Promise<ProviderCredentialsStatus> {
+    return mapProviderCredentials(await this.authed("/api/v1/ailo/provider-credentials"));
+  }
+
+  async saveProviderCredential(
+    provider: ProviderCredential,
+    apiKey: string,
+  ): Promise<ProviderCredentialState> {
+    const raw = await this.authed(`/api/v1/ailo/provider-credentials/${provider}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: apiKey }),
+    });
+    return mapProviderCredentials({ [provider]: raw })[provider];
+  }
+
+  async removeProviderCredential(provider: ProviderCredential): Promise<ProviderCredentialState> {
+    const raw = await this.authed(`/api/v1/ailo/provider-credentials/${provider}`, { method: "DELETE" });
+    return mapProviderCredentials({ [provider]: raw })[provider];
+  }
+
+  async testProviderCredential(
+    provider: ProviderCredential,
+    apiKey?: string,
+  ): Promise<ProviderCredentialTestResult> {
+    const raw = await this.authed(`/api/v1/ailo/provider-credentials/${provider}/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(apiKey ? { api_key: apiKey } : {}),
+    });
+    if (!isRecord(raw) || raw.ok !== true || raw.provider !== provider
+      || (raw.model != null && typeof raw.model !== "string")) {
+      throw new Error("FediPod returned an invalid credential test result");
+    }
+    return { ok: true, provider, ...(raw.model ? { model: raw.model } : {}) };
   }
 
   async aiTranslate(text: string, targetLang: string, provider?: AiProvider): Promise<string> {

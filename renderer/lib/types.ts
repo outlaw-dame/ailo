@@ -229,6 +229,21 @@ export interface MastodonFilterResult {
 /* -------------------------------------------------------------------------- */
 
 export type AiProvider = "openai" | "gemini";
+export type ProviderCredential = AiProvider | "safe_browsing";
+export type ProviderCredentialSource = "local" | "environment" | null;
+
+export interface ProviderCredentialState {
+  configured: boolean;
+  source: ProviderCredentialSource;
+}
+
+export type ProviderCredentialsStatus = Record<ProviderCredential, ProviderCredentialState>;
+
+export interface ProviderCredentialTestResult {
+  ok: true;
+  provider: ProviderCredential;
+  model?: string;
+}
 
 export interface AiStatus {
   /** Whether the connected FediPod agent has at least one provider key configured. */

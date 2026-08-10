@@ -6,9 +6,22 @@ import {
   mapFilterMatches,
   mapHashtagSuggestions,
   mapModerationSuggestions,
+  mapProviderCredentials,
   mapSafeBrowsingResult,
   mapTranslation,
 } from "./fedipod-ai.js";
+
+test("maps provider credential state without accepting secret-shaped fields", () => {
+  assert.deepEqual(mapProviderCredentials({
+    openai: { configured: true, source: "local", api_key: "must-not-map" },
+    gemini: { configured: true, source: "environment" },
+    safe_browsing: { configured: false, source: "local" },
+  }), {
+    openai: { configured: true, source: "local" },
+    gemini: { configured: true, source: "environment" },
+    safe_browsing: { configured: false, source: null },
+  });
+});
 
 test("maps configured AI providers and Safe Browsing capability", () => {
   assert.deepEqual(mapAiStatus({

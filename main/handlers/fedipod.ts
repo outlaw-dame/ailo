@@ -5,7 +5,7 @@ import { normalizeHashtag } from "../services/fedipod-tags.js";
 import { postsStore } from "../services/posts-store.js";
 import type { FediverseContentType, FediverseObjectType, FediverseVisibility } from "../types.js";
 import type { MastodonQuotePolicy } from "../types.js";
-import type { AiFilterMatchDocument, AiFilterMatchQuery, AiProvider } from "../types.js";
+import type { AiFilterMatchDocument, AiFilterMatchQuery, AiProvider, ProviderCredential } from "../types.js";
 
 const VISIBILITIES: FediverseVisibility[] = ["public", "unlisted", "private", "direct"];
 const OBJECT_TYPES: FediverseObjectType[] = ["Note", "Article"];
@@ -33,6 +33,21 @@ function asAiProvider(value: unknown): AiProvider | undefined {
   if (value == null || value === "") return undefined;
   if (value === "openai" || value === "gemini") return value;
   throw new Error("AI provider must be openai or gemini");
+}
+
+function asProviderCredential(value: unknown): ProviderCredential {
+  if (value === "openai" || value === "gemini" || value === "safe_browsing") return value;
+  throw new Error("Provider must be openai, gemini, or safe_browsing");
+}
+
+function requireApiKey(value: unknown): string {
+  if (typeof value !== "string") throw new Error("API key is required");
+  const key = value.trim();
+  if (!key || key.length > 1_024
+    || Array.from(key).some((character) => character.charCodeAt(0) <= 0x20 || character.charCodeAt(0) === 0x7f)) {
+    throw new Error("API key must contain 1–1024 non-whitespace characters");
+  }
+  return key;
 }
 
 export function registerFediPodHandlers(): void {
@@ -235,6 +250,25 @@ export function registerFediPodHandlers(): void {
 
   ipcMain.handle("fedipod:aiStatus", async () => {
     return fediPodService.aiStatus();
+  });
+
+  ipcMain.handle("fedipod:providerCredentials", async () => {
+    return fediPodService.providerCredentials();
+  });
+
+  ipcMain.handle("fedipod:saveProviderCredential", async (_event, provider: unknown, apiKey: unknown) => {
+    return fediPodService.saveProviderCredential(asProviderCredential(provider), requireApiKey(apiKey));
+  });
+
+  ipcMain.handle("fedipod:removeProviderCredential", async (_event, provider: unknown) => {
+    return fediPodService.removeProviderCredential(asProviderCredential(provider));
+  });
+
+  ipcMain.handle("fedipod:testProviderCredential", async (_event, provider: unknown, apiKey: unknown) => {
+    return fediPodService.testProviderCredential(
+      asProviderCredential(provider),
+      apiKey == null || apiKey === "" ? undefined : requireApiKey(apiKey),
+    );
   });
 
   ipcMain.handle("fedipod:aiTranslate", async (_event, text: unknown, targetLang: unknown, provider: unknown) => {

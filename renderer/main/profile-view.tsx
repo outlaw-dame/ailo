@@ -19,6 +19,7 @@ import {
 } from "@glaze/core/components";
 
 import { api } from "../lib/api";
+import { ProviderCredentials } from "../components/provider-credentials";
 
 function normalizeCalPath(input: string): string {
   const trimmed = input.trim();
@@ -467,6 +468,7 @@ export function ProfileView() {
                   </Button>
                 </div>
               </div>
+              <ProviderCredentials />
             </div>
           ) : (
             <>

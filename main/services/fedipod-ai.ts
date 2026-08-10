@@ -6,6 +6,8 @@ import type {
   AiModerationSuggestions,
   AiProvider,
   AiStatus,
+  ProviderCredential,
+  ProviderCredentialsStatus,
   SafeBrowsingResult,
 } from "../types.js";
 
@@ -15,6 +17,19 @@ function record(value: unknown): Record<string, unknown> {
 }
 const text = (value: unknown, fallback = "") => (typeof value === "string" ? value : fallback);
 const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+const CREDENTIAL_PROVIDERS: ProviderCredential[] = ["openai", "gemini", "safe_browsing"];
+
+export function mapProviderCredentials(raw: unknown): ProviderCredentialsStatus {
+  const source = record(raw);
+  return Object.fromEntries(CREDENTIAL_PROVIDERS.map((provider) => {
+    const state = record(source[provider]);
+    const configured = state.configured === true;
+    const credentialSource = configured && (state.source === "local" || state.source === "environment")
+      ? state.source : null;
+    return [provider, { configured, source: credentialSource }];
+  })) as ProviderCredentialsStatus;
+}
 
 export function mapAiStatus(raw: unknown): AiStatus {
   const source = record(raw);
