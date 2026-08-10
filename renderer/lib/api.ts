@@ -90,13 +90,13 @@ export const api = {
   },
   fedipod: {
     status: () => ipc().invoke("fedipod:status") as Promise<FediPodStatus>,
-    connect: (baseUrl: string, token: string) =>
-      ipc().invoke("fedipod:connect", baseUrl, token) as Promise<{
+    connect: (baseUrl: string, token: string, gateToken?: string) =>
+      ipc().invoke("fedipod:connect", baseUrl, token, gateToken) as Promise<{
         connected: true;
         account: MastodonAccount;
       }>,
-    login: (baseUrl: string, password?: string) =>
-      ipc().invoke("fedipod:login", baseUrl, password) as Promise<FediPodLoginResult>,
+    login: (baseUrl: string, password?: string, gateToken?: string) =>
+      ipc().invoke("fedipod:login", baseUrl, password, gateToken) as Promise<FediPodLoginResult>,
     disconnect: () => ipc().invoke("fedipod:disconnect") as Promise<{ connected: false }>,
     timeline: (options?: { maxId?: string; limit?: number }) =>
       ipc().invoke("fedipod:timeline", options ?? {}) as Promise<MastodonStatus[]>,

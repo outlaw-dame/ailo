@@ -74,6 +74,7 @@ export function ProfileView() {
   const [fediBaseUrl, setFediBaseUrl] = React.useState("http://localhost:8030");
   const [fediToken, setFediToken] = React.useState("");
   const [fediPassword, setFediPassword] = React.useState("");
+  const [fediGateToken, setFediGateToken] = React.useState("");
   const [fediNeedsPassword, setFediNeedsPassword] = React.useState(false);
   const [creatorDomains, setCreatorDomains] = React.useState("");
   const [hydrated, setHydrated] = React.useState(false);
@@ -187,7 +188,11 @@ export function ProfileView() {
   });
 
   const fediLogin = useMutation({
-    mutationFn: () => api.fedipod.login(fediBaseUrl.trim(), fediPassword.trim() || undefined),
+    mutationFn: () => api.fedipod.login(
+      fediBaseUrl.trim(),
+      fediPassword.trim() || undefined,
+      fediGateToken.trim() || undefined,
+    ),
     onSuccess: async (result) => {
       if (result.status === "password_required") {
         setFediNeedsPassword(true);
@@ -195,6 +200,7 @@ export function ProfileView() {
         return;
       }
       setFediPassword("");
+      setFediGateToken("");
       setFediNeedsPassword(false);
       await queryClient.invalidateQueries({ queryKey: ["fedipod"] });
       toast.success(`Connected as @${result.account.acct || result.account.username}`);
@@ -203,9 +209,14 @@ export function ProfileView() {
   });
 
   const fediConnect = useMutation({
-    mutationFn: () => api.fedipod.connect(fediBaseUrl.trim(), fediToken.trim()),
+    mutationFn: () => api.fedipod.connect(
+      fediBaseUrl.trim(),
+      fediToken.trim(),
+      fediGateToken.trim() || undefined,
+    ),
     onSuccess: async (result) => {
       setFediToken("");
+      setFediGateToken("");
       await queryClient.invalidateQueries({ queryKey: ["fedipod"] });
       toast.success(`Connected as @${result.account.acct || result.account.username}`);
     },
@@ -482,6 +493,20 @@ export function ProfileView() {
                     value={fediBaseUrl}
                     onChange={(event) => setFediBaseUrl(event.target.value)}
                     placeholder="http://localhost:8030"
+                  />
+                </Field>
+                <Field
+                  label="Tunnel access token (optional)"
+                  description="Required when this FediPod is exposed through a protected reverse proxy or Cloudflare Tunnel. Stored encrypted on this device."
+                  orientation="vertical"
+                >
+                  <Input
+                    type="password"
+                    value={fediGateToken}
+                    onChange={(event) => setFediGateToken(event.target.value)}
+                    placeholder="Paste AP_GATE_TOKEN"
+                    autoComplete="off"
+                    spellCheck={false}
                   />
                 </Field>
                 {fediNeedsPassword ? (

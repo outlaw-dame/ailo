@@ -267,6 +267,8 @@ class FediPodService {
 
   private tokenPath: string | null = null;
   private cachedToken: string | null = null;
+  private gateTokenPath: string | null = null;
+  private cachedGateToken: string | null = null;
 
   private async resolveTokenPath(): Promise<string> {
     if (!this.tokenPath) {
@@ -275,6 +277,15 @@ class FediPodService {
       this.tokenPath = path.join(dir, "fedipod-token.bin");
     }
     return this.tokenPath;
+  }
+
+  private async resolveGateTokenPath(): Promise<string> {
+    if (!this.gateTokenPath) {
+      const dir = app.getPath("userData");
+      await fs.mkdir(dir, { recursive: true });
+      this.gateTokenPath = path.join(dir, "fedipod-gate-token.bin");
+    }
+    return this.gateTokenPath;
   }
 
   private async readToken(): Promise<string | null> {
@@ -302,9 +313,37 @@ class FediPodService {
     this.cachedToken = token;
   }
 
+  private async readGateToken(): Promise<string | null> {
+    if (this.cachedGateToken) return this.cachedGateToken;
+    try {
+      const encrypted = await fs.readFile(await this.resolveGateTokenPath());
+      this.cachedGateToken = await safeStorage.decryptString(encrypted);
+      return this.cachedGateToken;
+    } catch (error) {
+      if (error instanceof Error && "code" in error
+        && (error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      logger.warn("fedipod", `Failed to read tunnel gate token: ${String(error)}`);
+      return null;
+    }
+  }
+
+  private async writeGateToken(token: string): Promise<void> {
+    const file = await this.resolveGateTokenPath();
+    if (!token) {
+      this.cachedGateToken = null;
+      await fs.rm(file, { force: true });
+      return;
+    }
+    const encrypted = await safeStorage.encryptString(token);
+    await fs.writeFile(file, encrypted, { mode: 0o600 });
+    await fs.chmod(file, 0o600);
+    this.cachedGateToken = token;
+  }
+
   private async clearToken(): Promise<void> {
     this.cachedToken = null;
     await fs.rm(await this.resolveTokenPath(), { force: true });
+    await this.writeGateToken("");
   }
 
   /** Low-level authorized request against the Mastodon client API. */
@@ -313,10 +352,12 @@ class FediPodService {
     token: string,
     apiPath: string,
     init: FetchInit = {},
+    gateToken?: string | null,
   ): Promise<unknown> {
     const url = `${baseUrl}${apiPath}`;
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${token}`);
+    if (gateToken) headers.set("x-dk-token", gateToken);
     if (!headers.has("Accept")) headers.set("Accept", "application/json");
     let response: Response;
     try {
@@ -335,6 +376,10 @@ class FediPodService {
       } catch {
         /* keep raw text */
       }
+      if ((response.status === 401 || response.status === 403)
+        && /unauthorized|forbidden/i.test(text) && !/access token/i.test(text)) {
+        throw new Error("FediPod rejected the tunnel access token.");
+      }
       if (response.status === 401 || response.status === 403) {
         throw new Error("FediPod rejected the access token. Reconnect in the You tab.");
       }
@@ -347,25 +392,28 @@ class FediPodService {
   private async authed(apiPath: string, init: FetchInit = {}): Promise<unknown> {
     const config = await this.config.load();
     const token = await this.readToken();
+    const gateToken = await this.readGateToken();
     if (!config.baseUrl || !token) {
       throw new Error("FediPod is not connected. Connect it in the You tab.");
     }
-    return this.request(config.baseUrl, token, apiPath, init);
+    return this.request(config.baseUrl, token, apiPath, init, gateToken);
   }
 
   /* --------------------------------- auth -------------------------------- */
 
-  async connect(baseUrlInput: string, tokenInput: string): Promise<MastodonAccount> {
+  async connect(baseUrlInput: string, tokenInput: string, gateTokenInput?: string): Promise<MastodonAccount> {
     const baseUrl = normalizeBaseUrl(baseUrlInput);
     const token = tokenInput.trim();
     if (!token) throw new Error("An access token is required to connect to FediPod.");
 
-    const raw = await this.request(baseUrl, token, "/api/v1/accounts/verify_credentials");
+    const gateToken = gateTokenInput?.trim() || "";
+    const raw = await this.request(baseUrl, token, "/api/v1/accounts/verify_credentials", {}, gateToken);
     const account = mapAccount(raw);
     if (!account.id) {
       throw new Error("FediPod did not return an account for this token.");
     }
     await this.writeToken(token);
+    await this.writeGateToken(gateToken);
     await this.config.save({ version: 1, baseUrl, account });
     logger.info("fedipod", `Connected to ${baseUrl} as @${account.acct || account.username}`);
     return account;
@@ -380,20 +428,30 @@ class FediPodService {
    * login form instead of JSON — we surface that as `password_required` so
    * the caller can prompt and retry with the password.
    */
-  async loginWithOneClick(baseUrlInput: string, password?: string): Promise<FediPodLoginResult> {
+  async loginWithOneClick(
+    baseUrlInput: string,
+    password?: string,
+    gateTokenInput?: string,
+  ): Promise<FediPodLoginResult> {
     const baseUrl = normalizeBaseUrl(baseUrlInput);
     const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
     authorizeUrl.searchParams.set("redirect_uri", "urn:ietf:wg:oauth:2.0:oob");
+    const gateToken = gateTokenInput?.trim() || "";
 
     let response: Response;
     try {
       response = password
         ? await fetch(authorizeUrl, {
             method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              ...(gateToken ? { "x-dk-token": gateToken } : {}),
+            },
             body: new URLSearchParams({ redirect_uri: "urn:ietf:wg:oauth:2.0:oob", password }),
           })
-        : await fetch(authorizeUrl);
+        : await fetch(authorizeUrl, {
+            headers: gateToken ? { "x-dk-token": gateToken } : undefined,
+          });
     } catch (error) {
       throw new Error(
         `Could not reach FediPod at ${baseUrl}. Is it running? (${error instanceof Error ? error.message : String(error)})`,
@@ -401,6 +459,10 @@ class FediPodService {
     }
 
     const contentType = response.headers.get("content-type") ?? "";
+    if ((response.status === 401 || response.status === 403)
+      && !contentType.includes("text/html") && !contentType.includes("application/json")) {
+      throw new Error("FediPod rejected the tunnel access token.");
+    }
     if (contentType.includes("text/html")) {
       // FediPod renders its login form as HTML instead of returning JSON
       // when a UI password is required (200 = "enter it", 401 = "wrong one").
@@ -431,7 +493,7 @@ class FediPodService {
     const code = isRecord(body) && typeof body.code === "string" ? body.code : "";
     if (!code) throw new Error("FediPod did not return an authorization code.");
 
-    const account = await this.connect(baseUrl, code);
+    const account = await this.connect(baseUrl, code, gateToken);
     return { status: "connected", account };
   }
 

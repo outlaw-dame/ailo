@@ -50,16 +50,33 @@ function requireApiKey(value: unknown): string {
   return key;
 }
 
+function optionalGateToken(value: unknown): string | undefined {
+  if (value == null || value === "") return undefined;
+  if (typeof value !== "string") throw new Error("Tunnel access token must be a string");
+  const token = value.trim();
+  if (!token || token.length > 1_024
+    || Array.from(token).some((character) => character.charCodeAt(0) <= 0x20 || character.charCodeAt(0) === 0x7f)) {
+    throw new Error("Tunnel access token must contain 1–1024 non-whitespace characters");
+  }
+  return token;
+}
+
 export function registerFediPodHandlers(): void {
   ipcMain.handle("fedipod:status", async () => {
     return fediPodService.getStatus();
   });
 
-  ipcMain.handle("fedipod:connect", async (_event, baseUrl: unknown, token: unknown) => {
+  ipcMain.handle("fedipod:connect", async (
+    _event,
+    baseUrl: unknown,
+    token: unknown,
+    gateToken: unknown,
+  ) => {
     try {
       const account = await fediPodService.connect(
         requireString(baseUrl, "FediPod URL"),
         requireString(token, "Access token"),
+        optionalGateToken(gateToken),
       );
       const status = await fediPodService.getStatus();
       ipcMain.broadcast("fedipod:status-changed", status);
@@ -70,11 +87,17 @@ export function registerFediPodHandlers(): void {
     }
   });
 
-  ipcMain.handle("fedipod:login", async (_event, baseUrl: unknown, password: unknown) => {
+  ipcMain.handle("fedipod:login", async (
+    _event,
+    baseUrl: unknown,
+    password: unknown,
+    gateToken: unknown,
+  ) => {
     try {
       const result = await fediPodService.loginWithOneClick(
         requireString(baseUrl, "FediPod URL"),
         typeof password === "string" && password.trim() ? password.trim() : undefined,
+        optionalGateToken(gateToken),
       );
       if (result.status === "connected") {
         const status = await fediPodService.getStatus();
