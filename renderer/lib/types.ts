@@ -162,6 +162,16 @@ export interface MastodonFeaturedTag {
   lastStatusAt: string | null;
 }
 
+/**
+ * The two semantic-matching backends a filter keyword can opt into.
+ * "local" runs entirely on-device (semantic-filter-service.ts, EmbeddingGemma)
+ * — nothing leaves the machine. "openai" sends the keyword and candidate
+ * status text to FediPod's /api/v1/ailo/ai/filters/match, which calls
+ * OpenAI's embeddings API — opt-in per keyword, never the default.
+ */
+export const SEMANTIC_MODEL_LOCAL = "embeddinggemma-300m";
+export const SEMANTIC_MODEL_OPENAI = "openai-text-embedding-3-small";
+
 export interface MastodonFilterKeyword {
   id: string;
   keyword: string;
@@ -169,6 +179,7 @@ export interface MastodonFilterKeyword {
   /** Ailo/FediPod extension: compare sentence meaning in addition to Mastodon's exact match. */
   semantic: boolean;
   semanticThreshold: number | null;
+  /** SEMANTIC_MODEL_LOCAL, SEMANTIC_MODEL_OPENAI, or null (not semantic / unset). */
   semanticModel: string | null;
 }
 
@@ -184,6 +195,50 @@ export interface MastodonFilter {
 export interface MastodonFilterResult {
   filter: MastodonFilter;
   keywordMatches: string[];
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Ailo/FediPod extension: OpenAI-backed features (/api/v1/ailo/ai/*)        */
+/*  Calls happen only in FediPod — Ailo never stores an OpenAI key.           */
+/* -------------------------------------------------------------------------- */
+
+export interface AiStatus {
+  /** Whether the connected FediPod agent has AP_OPENAI_API_KEY configured. */
+  enabled: boolean;
+}
+
+export interface AiKeywordSuggestion {
+  keyword: string;
+  reason: string;
+}
+export interface AiDomainSuggestion {
+  domain: string;
+  reason: string;
+}
+export interface AiAccountSuggestion {
+  acct: string;
+  reason: string;
+}
+
+export interface AiModerationSuggestions {
+  keywords: AiKeywordSuggestion[];
+  domains: AiDomainSuggestion[];
+  accounts: AiAccountSuggestion[];
+}
+
+export interface AiFilterMatchQuery {
+  id: string;
+  text: string;
+  /** Falls back to FediPod's own default when omitted. */
+  threshold?: number;
+}
+export interface AiFilterMatchDocument {
+  id: string;
+  text: string;
+}
+export interface AiFilterMatch {
+  queryId: string;
+  documentId: string;
 }
 
 export type FediverseObjectType = "Note" | "Article";

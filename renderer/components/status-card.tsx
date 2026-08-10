@@ -1,6 +1,6 @@
 import * as React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Ban, ExternalLink, Heart, Pin, Quote, Repeat2, Reply, ShieldAlert, UserPlus, VolumeX } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Ban, ExternalLink, Heart, Languages, Pin, Quote, Repeat2, Reply, ShieldAlert, UserPlus, VolumeX } from "lucide-react";
 import { Badge, Button, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
@@ -79,6 +79,15 @@ export function StatusCard({
     mutationFn: () => api.fedipod.pin(s.id, !s.pinned),
     onSuccess: () => { invalidate(); toast.success(s.pinned ? "Post unpinned" : "Post pinned"); },
     onError: (e: Error) => toast.error(e.message),
+  });
+
+  const aiStatus = useQuery({ queryKey: ["fedipod", "ai", "status"], queryFn: api.ai.status });
+  const [translated, setTranslated] = React.useState<string | null>(null);
+  const targetLang = typeof navigator !== "undefined" ? navigator.language.split("-")[0] : "en";
+  const translate = useMutation({
+    mutationFn: () => api.ai.translate(s.content, targetLang),
+    onSuccess: setTranslated,
+    onError: (e: Error) => toast.error(e.message || "Could not translate"),
   });
 
   const images = s.mediaAttachments.filter((m) => m.type === "image" || m.type === "gifv");
@@ -189,6 +198,12 @@ export function StatusCard({
               ))}
             </div>
           ) : null}
+          {translated ? (
+            <div className="flex flex-col gap-1 rounded-control border border-dashed border-secondary px-3 py-2">
+              <Text variant="mini" color="tertiary">Translated ({targetLang})</Text>
+              <Text variant="small" className="whitespace-pre-wrap">{translated}</Text>
+            </div>
+          ) : null}
           {s.quote ? (
             s.quote.quotedStatus ? (
               <div className="flex flex-col gap-1.5 rounded-control border border-secondary bg-control-subtle/50 px-3 py-2.5">
@@ -247,6 +262,18 @@ export function StatusCard({
           <Heart />
           <span className="tabular-nums">{s.favouritesCount || ""}</span>
         </Button>
+        {aiStatus.data?.enabled ? (
+          <Button
+            size="small"
+            variant="transparent"
+            className={translated ? "text-primary" : undefined}
+            disabled={translate.isPending}
+            onClick={() => (translated ? setTranslated(null) : translate.mutate())}
+          >
+            <Languages />
+            {translated ? "Original" : "Translate"}
+          </Button>
+        ) : null}
         {!isOwn ? <Button
           size="small"
           variant="transparent"

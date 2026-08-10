@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { Eye, ImagePlus, Plus, Save, Send, X } from "lucide-react";
+import { Eye, ImagePlus, Plus, Save, Send, Sparkles, X } from "lucide-react";
 import {
   Button,
   Field,
@@ -54,6 +54,19 @@ export function EditorView() {
   const [mode, setMode] = React.useState<EditorMode>("write");
   const [hydratedId, setHydratedId] = React.useState<string | null>(null);
   const [manualAltSrc, setManualAltSrc] = React.useState("");
+  const [suggestedTags, setSuggestedTags] = React.useState<string[]>([]);
+
+  const aiStatus = useQuery({ queryKey: ["fedipod", "ai", "status"], queryFn: api.ai.status });
+  const suggestHashtags = useMutation({
+    mutationFn: () => api.ai.suggestHashtags(`${title}\n\n${body}`),
+    onSuccess: (hashtags) => setSuggestedTags(hashtags),
+    onError: (error: Error) => toast.error(error.message || "Could not suggest hashtags"),
+  });
+  const currentTags = new Set(tagsInput.split(",").map((tag) => tag.trim().toLowerCase()).filter(Boolean));
+  const addSuggestedTag = (tag: string) => {
+    setTagsInput((prev) => (prev.trim() ? `${prev.trim()}, ${tag}` : tag));
+    setSuggestedTags((prev) => prev.filter((entry) => entry !== tag));
+  };
 
   React.useEffect(() => {
     if (!postId) {
@@ -283,6 +296,36 @@ export function EditorView() {
             />
           </Field>
         </FieldGroup>
+
+        {aiStatus.data?.enabled ? (
+          <div className="flex flex-col gap-2">
+            <Button
+              size="small"
+              variant="filled"
+              disabled={suggestHashtags.isPending || !body.trim()}
+              onClick={() => suggestHashtags.mutate()}
+            >
+              <Sparkles />
+              Suggest hashtags
+            </Button>
+            {suggestedTags.length ? (
+              <div className="flex flex-wrap gap-2">
+                {suggestedTags.map((tag) => (
+                  <Button
+                    key={tag}
+                    size="small"
+                    variant="transparent"
+                    disabled={currentTags.has(tag)}
+                    onClick={() => addSuggestedTag(tag)}
+                  >
+                    <Plus />
+                    #{tag}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">

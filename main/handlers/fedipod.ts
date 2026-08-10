@@ -5,6 +5,7 @@ import { normalizeHashtag } from "../services/fedipod-tags.js";
 import { postsStore } from "../services/posts-store.js";
 import type { FediverseContentType, FediverseObjectType, FediverseVisibility } from "../types.js";
 import type { MastodonQuotePolicy } from "../types.js";
+import type { AiFilterMatchDocument, AiFilterMatchQuery } from "../types.js";
 
 const VISIBILITIES: FediverseVisibility[] = ["public", "unlisted", "private", "direct"];
 const OBJECT_TYPES: FediverseObjectType[] = ["Note", "Article"];
@@ -212,5 +213,30 @@ export function registerFediPodHandlers(): void {
     const post = await postsStore.get(requireString(postId, "Post id"));
     if (!post) throw new Error(`Post not found: ${String(postId)}`);
     return fediPodService.crossPostStory(post, asVisibility(visibility));
+  });
+
+  /* -------------------------- AI (OpenAI, via FediPod) --------------------- */
+
+  ipcMain.handle("fedipod:aiStatus", async () => {
+    return fediPodService.aiStatus();
+  });
+
+  ipcMain.handle("fedipod:aiTranslate", async (_event, text: unknown, targetLang: unknown) => {
+    return fediPodService.aiTranslate(requireString(text, "Text"), requireString(targetLang, "Target language"));
+  });
+
+  ipcMain.handle("fedipod:aiSuggestHashtags", async (_event, text: unknown) => {
+    return fediPodService.aiSuggestHashtags(requireString(text, "Text"));
+  });
+
+  ipcMain.handle("fedipod:aiSuggestModeration", async () => {
+    return fediPodService.aiSuggestModeration();
+  });
+
+  ipcMain.handle("fedipod:aiMatchFilters", async (_event, queries: unknown, documents: unknown) => {
+    return fediPodService.aiMatchFilters(
+      Array.isArray(queries) ? queries as AiFilterMatchQuery[] : [],
+      Array.isArray(documents) ? documents as AiFilterMatchDocument[] : [],
+    );
   });
 }

@@ -16,3 +16,6 @@ Thumbs.db
 
 # Glaze agent temporary files
 tmp/*
+
+# Build output
+/build/

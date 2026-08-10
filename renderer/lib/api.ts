@@ -1,4 +1,9 @@
 import type {
+  AiFilterMatch,
+  AiFilterMatchDocument,
+  AiFilterMatchQuery,
+  AiModerationSuggestions,
+  AiStatus,
   FediPodLoginResult,
   FediPodCapabilities,
   FediPodStatus,
@@ -164,5 +169,19 @@ export const api = {
   },
   app: {
     openExternal: (url: string) => ipc().invoke("app:openExternal", url) as Promise<{ ok: true }>,
+  },
+  // OpenAI-backed features. The key lives only in FediPod's own .env — every
+  // call here proxies through the existing authed FediPod connection, never
+  // storing or seeing a key on this side.
+  ai: {
+    status: () => ipc().invoke("fedipod:aiStatus") as Promise<AiStatus>,
+    translate: (text: string, targetLang: string) =>
+      ipc().invoke("fedipod:aiTranslate", text, targetLang) as Promise<string>,
+    suggestHashtags: (text: string) =>
+      ipc().invoke("fedipod:aiSuggestHashtags", text) as Promise<string[]>,
+    suggestModeration: () =>
+      ipc().invoke("fedipod:aiSuggestModeration") as Promise<AiModerationSuggestions>,
+    matchFilters: (queries: AiFilterMatchQuery[], documents: AiFilterMatchDocument[]) =>
+      ipc().invoke("fedipod:aiMatchFilters", queries, documents) as Promise<AiFilterMatch[]>,
   },
 };

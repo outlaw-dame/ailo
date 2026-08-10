@@ -1,4 +1,12 @@
-import type { MastodonFilter, MastodonFilterResult, MastodonStatus } from "./types";
+import { api } from "./api";
+import type {
+  AiFilterMatchDocument,
+  AiFilterMatchQuery,
+  MastodonFilter,
+  MastodonFilterResult,
+  MastodonStatus,
+} from "./types";
+import { SEMANTIC_MODEL_OPENAI } from "./types";
 
 const MODEL = "onnx-community/embeddinggemma-300m-ONNX";
 const MODEL_REVISION = "5090578d9565bb06545b4552f76e6bc2c93e4a66";
@@ -170,6 +178,60 @@ export class SemanticFilterService {
     return new Map(unique.map((text) => [text, this.cache.get(text)!]));
   }
 
+  /**
+   * OpenAI-backed keywords (keyword.semanticModel === SEMANTIC_MODEL_OPENAI)
+   * are matched by FediPod's /api/v1/ailo/ai/filters/match instead of the
+   * local model — opt-in per keyword, see fediverse-moderation.tsx. Returns
+   * queryId ("filterId:keywordId") → the set of matching status ids.
+   */
+  private async matchOpenAiKeywords(
+    filters: MastodonFilter[],
+    documentsByStatus: Map<string, string[]>,
+  ): Promise<Map<string, Set<string>>> {
+    const queries: AiFilterMatchQuery[] = [];
+    for (const filter of filters) {
+      for (const keyword of filter.keywords) {
+        if (keyword.semantic && keyword.semanticModel === SEMANTIC_MODEL_OPENAI) {
+          queries.push({
+            id: `${filter.id}:${keyword.id}`,
+            text: semanticQuery(keyword.keyword),
+            threshold: keyword.semanticThreshold ?? undefined,
+          });
+        }
+      }
+    }
+    if (!queries.length) return new Map();
+
+    const documents: AiFilterMatchDocument[] = [];
+    const statusIdByDocumentId = new Map<string, string>();
+    for (const [statusId, texts] of documentsByStatus) {
+      texts.forEach((text, index) => {
+        const id = `${statusId}::${index}`;
+        documents.push({ id, text });
+        statusIdByDocumentId.set(id, statusId);
+      });
+    }
+    if (!documents.length) return new Map();
+
+    try {
+      const matches = await api.ai.matchFilters(queries, documents);
+      const byQuery = new Map<string, Set<string>>();
+      for (const match of matches) {
+        const statusId = statusIdByDocumentId.get(match.documentId);
+        if (!statusId) continue;
+        if (!byQuery.has(match.queryId)) byQuery.set(match.queryId, new Set());
+        byQuery.get(match.queryId)?.add(statusId);
+      }
+      return byQuery;
+    } catch (error) {
+      console.warn(
+        "[semantic-filters] OpenAI semantic matching unavailable; those keywords are skipped this pass:",
+        error instanceof Error ? error.message : String(error),
+      );
+      return new Map();
+    }
+  }
+
   async apply(
     statuses: MastodonStatus[],
     filters: MastodonFilter[],
@@ -190,22 +252,32 @@ export class SemanticFilterService {
       status.id,
       semanticChunks(semanticText(status)).map((chunk) => semanticDocument(chunk, status.title)),
     ]));
-    const queries = semanticFilters.flatMap((filter) =>
-      filter.keywords.filter((keyword) => keyword.semantic).map((keyword) => semanticQuery(keyword.keyword)),
-    );
     const allDocuments = [...documentsByStatus.values()].flat();
     if (!allDocuments.length) return statuses;
 
-    let vectors: Map<string, number[]>;
-    try {
-      vectors = await this.vectors([...queries, ...allDocuments]);
-    } catch (error) {
-      console.warn(
-        "[semantic-filters] Semantic matching unavailable; exact Mastodon filters remain active:",
-        error instanceof Error ? error.message : String(error),
-      );
-      return statuses;
+    // Keywords stay on the local, on-device model by default (unset or
+    // anything other than SEMANTIC_MODEL_OPENAI) — behavior is unchanged from
+    // before this backend existed. Only keywords explicitly opted into
+    // SEMANTIC_MODEL_OPENAI go over the network, via matchOpenAiKeywords.
+    const localQueries = semanticFilters.flatMap((filter) =>
+      filter.keywords
+        .filter((keyword) => keyword.semantic && keyword.semanticModel !== SEMANTIC_MODEL_OPENAI)
+        .map((keyword) => semanticQuery(keyword.keyword)),
+    );
+
+    let localVectors: Map<string, number[]> = new Map();
+    if (localQueries.length) {
+      try {
+        localVectors = await this.vectors([...localQueries, ...allDocuments]);
+      } catch (error) {
+        console.warn(
+          "[semantic-filters] Local semantic matching unavailable; exact Mastodon filters remain active:",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     }
+
+    const openAiMatches = await this.matchOpenAiKeywords(semanticFilters, documentsByStatus);
 
     for (const status of targets) {
       const documents = documentsByStatus.get(status.id) ?? [];
@@ -213,10 +285,14 @@ export class SemanticFilterService {
         if (exactResult(status, filter.id)) continue;
         const matches = filter.keywords.filter((keyword) => {
           if (!keyword.semantic) return false;
-          const query = vectors.get(semanticQuery(keyword.keyword));
+          if (keyword.semanticModel === SEMANTIC_MODEL_OPENAI) {
+            return openAiMatches.get(`${filter.id}:${keyword.id}`)?.has(status.id) ?? false;
+          }
+          if (!localVectors.size) return false;
+          const query = localVectors.get(semanticQuery(keyword.keyword));
           if (!query) return false;
           const threshold = semanticThreshold(keyword);
-          return documents.some((document) => dot(query, vectors.get(document) ?? []) >= threshold);
+          return documents.some((document) => dot(query, localVectors.get(document) ?? []) >= threshold);
         });
         if (matches.length) {
           status.filtered.push({

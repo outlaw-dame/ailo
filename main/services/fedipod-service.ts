@@ -4,6 +4,11 @@ import * as path from "node:path";
 import { app, logger, safeStorage } from "@glaze/core/backend";
 
 import type {
+  AiFilterMatch,
+  AiFilterMatchDocument,
+  AiFilterMatchQuery,
+  AiModerationSuggestions,
+  AiStatus,
   FediPodConfig,
   FediPodCapabilities,
   FediPodLoginResult,
@@ -42,6 +47,13 @@ import {
   mapCollectionSourcePreview,
   mapQuoteMetadata,
 } from "./fedipod-modern.js";
+import {
+  mapAiStatus,
+  mapFilterMatches,
+  mapHashtagSuggestions,
+  mapModerationSuggestions,
+  mapTranslation,
+} from "./fedipod-ai.js";
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
@@ -527,6 +539,47 @@ class FediPodService {
 
   async deleteFilter(id: string): Promise<void> {
     await this.authed(`/api/v2/filters/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  /* -------------------------- AI (OpenAI, via FediPod) --------------------- */
+  /* Ailo never holds an OpenAI key itself — every call here just proxies to  */
+  /* FediPod's /api/v1/ailo/ai/* endpoints over the existing authed session.  */
+
+  async aiStatus(): Promise<AiStatus> {
+    return mapAiStatus(await this.authed("/api/v1/ailo/ai/status"));
+  }
+
+  async aiTranslate(text: string, targetLang: string): Promise<string> {
+    return mapTranslation(await this.authed("/api/v1/ailo/ai/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, target_lang: targetLang }),
+    }));
+  }
+
+  async aiSuggestHashtags(text: string): Promise<string[]> {
+    return mapHashtagSuggestions(await this.authed("/api/v1/ailo/ai/hashtags/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }));
+  }
+
+  async aiSuggestModeration(): Promise<AiModerationSuggestions> {
+    return mapModerationSuggestions(await this.authed("/api/v1/ailo/ai/moderation/suggest", {
+      method: "POST",
+    }));
+  }
+
+  async aiMatchFilters(
+    queries: AiFilterMatchQuery[],
+    documents: AiFilterMatchDocument[],
+  ): Promise<AiFilterMatch[]> {
+    return mapFilterMatches(await this.authed("/api/v1/ailo/ai/filters/match", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ queries, documents }),
+    }));
   }
 
   async fetchCapabilities(): Promise<FediPodCapabilities> {
