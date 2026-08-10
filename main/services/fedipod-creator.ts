@@ -20,7 +20,7 @@ export function mapCreatorAttribution(
   const source = record(r.source);
   const account = mapAccount(r);
   const handle = account.acct || account.username;
-  const escaped = handle.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+  const escaped = handle.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
   return {
     account,
     domains: array(source.attribution_domains).map(string).filter(Boolean),
