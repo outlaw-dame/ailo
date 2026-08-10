@@ -116,6 +116,20 @@ export interface MastodonCollection {
   id: string; accountId: string; uri: string; url: string; name: string; description: string;
   language: string | null; sensitive: boolean; discoverable: boolean; itemCount: number;
   items: MastodonCollectionItem[]; createdAt: string; updatedAt: string;
+  sourceUrl: string | null; sourcePage: string | null; sourceKind: string | null;
+}
+
+export interface MastodonCollectionSource {
+  id: string; name: string; url: string; description: string; importHint: string;
+}
+export interface MastodonCollectionSourcePreview {
+  name: string; description: string; sourceUrl: string; sourcePage: string;
+  sourceKind: string; accountCount: number;
+}
+export interface MastodonCollectionImportResult {
+  collections: MastodonCollection[]; sourceUrl: string; accountCount: number;
+  failedCount: number; invitationCount: number; addedCount: number; removedCount: number;
+  alreadyImported: boolean;
 }
 
 export interface MastodonRelationship {

@@ -13,6 +13,9 @@ import type {
   FediverseObjectType,
   MastodonAccount,
   MastodonCollection,
+  MastodonCollectionImportResult,
+  MastodonCollectionSource,
+  MastodonCollectionSourcePreview,
   MastodonMediaAttachment,
   MastodonFilter,
   MastodonFilterResult,
@@ -32,7 +35,13 @@ import {
 } from "./fedipod-groups.js";
 import { JsonStore } from "./json-store.js";
 import { mapFeaturedTag, mapTag } from "./fedipod-tags.js";
-import { mapCollection, mapQuoteMetadata } from "./fedipod-modern.js";
+import {
+  mapCollection,
+  mapCollectionImport,
+  mapCollectionSource,
+  mapCollectionSourcePreview,
+  mapQuoteMetadata,
+} from "./fedipod-modern.js";
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
@@ -582,6 +591,23 @@ class FediPodService {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ account_id: accountId }),
     });
+  }
+
+  async fetchCollectionSources(): Promise<MastodonCollectionSource[]> {
+    return arr(await this.authed("/api/v1/collection_sources"))
+      .map(mapCollectionSource).filter((source) => source.id && source.url);
+  }
+
+  async previewCollectionSource(url: string): Promise<MastodonCollectionSourcePreview> {
+    return mapCollectionSourcePreview(await this.authed("/api/v1/collection_sources/preview", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
+    }));
+  }
+
+  async importCollectionSource(url: string): Promise<MastodonCollectionImportResult> {
+    return mapCollectionImport(await this.authed("/api/v1/collection_sources/import", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
+    }));
   }
 
   /* ------------------------------- actions ------------------------------- */

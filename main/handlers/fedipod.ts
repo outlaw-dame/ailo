@@ -96,6 +96,11 @@ export function registerFediPodHandlers(): void {
   ipcMain.handle("fedipod:featuredTagSuggestions", async () => fediPodService.fetchFeaturedTagSuggestions());
   ipcMain.handle("fedipod:suggestions", async () => fediPodService.fetchSuggestions());
   ipcMain.handle("fedipod:collections", async () => fediPodService.fetchCollections());
+  ipcMain.handle("fedipod:collectionSources", async () => fediPodService.fetchCollectionSources());
+  ipcMain.handle("fedipod:previewCollectionSource", async (_event, url: unknown) =>
+    fediPodService.previewCollectionSource(requireString(url, "Collection source URL")));
+  ipcMain.handle("fedipod:importCollectionSource", async (_event, url: unknown) =>
+    fediPodService.importCollectionSource(requireString(url, "Collection source URL")));
 
   ipcMain.handle("fedipod:dismissSuggestion", async (_event, id: unknown) => {
     await fediPodService.dismissSuggestion(requireString(id, "Account id"));

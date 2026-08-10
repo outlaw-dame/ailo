@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mapCollection, mapQuoteMetadata } from "./fedipod-modern.js";
+import { mapCollection, mapCollectionImport, mapCollectionSourcePreview, mapQuoteMetadata } from "./fedipod-modern.js";
 
 const account = {
   id: "a1", username: "ada", acct: "ada@example.social", display_name: "Ada",
@@ -33,4 +33,25 @@ test("maps Mastodon 4.6 Collection envelopes and consent state", () => {
   assert.equal(collection.name, "Writers");
   assert.equal(collection.discoverable, true);
   assert.equal(collection.items[0]?.state, "pending");
+});
+
+test("maps public Collection source preview, provenance, and import outcome", () => {
+  const preview = mapCollectionSourcePreview({
+    name: "Developers", description: "Opt-in pack", source_url: "https://fedidevs.com/s/abc/",
+    source_page: "https://fedidevs.com/s/abc/", source_kind: "fedidevs", account_count: 12,
+  });
+  const imported = mapCollectionImport({
+    source_url: preview.sourceUrl, account_count: 10, failed_count: 2, invitation_count: 10,
+    added_count: 3, removed_count: 1,
+    collections: [{
+      id: "c2", name: "Developers", source_url: preview.sourceUrl,
+      source_page: preview.sourcePage, source_kind: preview.sourceKind,
+    }],
+  });
+  assert.equal(preview.accountCount, 12);
+  assert.equal(imported.collections[0]?.sourceKind, "fedidevs");
+  assert.equal(imported.failedCount, 2);
+  assert.equal(imported.invitationCount, 10);
+  assert.equal(imported.addedCount, 3);
+  assert.equal(imported.removedCount, 1);
 });

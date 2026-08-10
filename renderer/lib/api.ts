@@ -10,6 +10,9 @@ import type {
   ImageAltText,
   MastodonAccount,
   MastodonCollection,
+  MastodonCollectionImportResult,
+  MastodonCollectionSource,
+  MastodonCollectionSourcePreview,
   MastodonFilter,
   MastodonFeaturedTag,
   MastodonNotification,
@@ -97,6 +100,12 @@ export const api = {
     dismissSuggestion: (id: string) =>
       ipc().invoke("fedipod:dismissSuggestion", id) as Promise<{ ok: true }>,
     collections: () => ipc().invoke("fedipod:collections") as Promise<MastodonCollection[]>,
+    collectionSources: () =>
+      ipc().invoke("fedipod:collectionSources") as Promise<MastodonCollectionSource[]>,
+    previewCollectionSource: (url: string) =>
+      ipc().invoke("fedipod:previewCollectionSource", url) as Promise<MastodonCollectionSourcePreview>,
+    importCollectionSource: (url: string) =>
+      ipc().invoke("fedipod:importCollectionSource", url) as Promise<MastodonCollectionImportResult>,
     createCollection: (input: { name: string; description?: string; discoverable?: boolean }) =>
       ipc().invoke("fedipod:createCollection", input) as Promise<MastodonCollection>,
     deleteCollection: (id: string) =>
