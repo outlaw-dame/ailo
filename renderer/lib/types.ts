@@ -188,14 +188,15 @@ export interface MastodonFeaturedTag {
 }
 
 /**
- * The two semantic-matching backends a filter keyword can opt into.
+ * Semantic-matching backends a filter keyword can opt into.
  * "local" runs entirely on-device (semantic-filter-service.ts, EmbeddingGemma)
- * — nothing leaves the machine. "openai" sends the keyword and candidate
- * status text to FediPod's /api/v1/ailo/ai/filters/match, which calls
- * OpenAI's embeddings API — opt-in per keyword, never the default.
+ * — nothing leaves the machine. OpenAI and Gemini send the keyword and
+ * candidate text to FediPod's authenticated provider proxy — opt-in per
+ * keyword, never the default.
  */
 export const SEMANTIC_MODEL_LOCAL = "embeddinggemma-300m";
 export const SEMANTIC_MODEL_OPENAI = "openai-text-embedding-3-small";
+export const SEMANTIC_MODEL_GEMINI = "gemini-embedding-2";
 
 export interface MastodonFilterKeyword {
   id: string;
@@ -204,7 +205,7 @@ export interface MastodonFilterKeyword {
   /** Ailo/FediPod extension: compare sentence meaning in addition to Mastodon's exact match. */
   semantic: boolean;
   semanticThreshold: number | null;
-  /** SEMANTIC_MODEL_LOCAL, SEMANTIC_MODEL_OPENAI, or null (not semantic / unset). */
+  /** A supported semantic model identifier, or null (not semantic / unset). */
   semanticModel: string | null;
 }
 
@@ -223,13 +224,31 @@ export interface MastodonFilterResult {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Ailo/FediPod extension: OpenAI-backed features (/api/v1/ailo/ai/*)        */
-/*  Calls happen only in FediPod — Ailo never stores an OpenAI key.           */
+/*  Ailo/FediPod extension: provider-backed features (/api/v1/ailo/ai/*)      */
+/*  Calls happen only in FediPod — Ailo never stores provider API keys.       */
 /* -------------------------------------------------------------------------- */
 
+export type AiProvider = "openai" | "gemini";
+
 export interface AiStatus {
-  /** Whether the connected FediPod agent has AP_OPENAI_API_KEY configured. */
+  /** Whether the connected FediPod agent has at least one provider key configured. */
   enabled: boolean;
+  providers: AiProvider[];
+  defaultProvider: AiProvider | null;
+  models: Partial<Record<AiProvider, string>>;
+  safeBrowsingEnabled: boolean;
+}
+
+export interface SafeBrowsingThreat {
+  url: string;
+  threatTypes: string[];
+}
+
+export interface SafeBrowsingResult {
+  safe: boolean;
+  threats: SafeBrowsingThreat[];
+  checkedUrls: string[];
+  cached: boolean;
 }
 
 export interface AiKeywordSuggestion {

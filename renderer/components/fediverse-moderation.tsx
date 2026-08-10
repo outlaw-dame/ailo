@@ -15,8 +15,9 @@ import {
 
 import { api } from "../lib/api";
 import { semanticFilterService } from "../lib/semantic-filter-service";
-import { SEMANTIC_MODEL_LOCAL, SEMANTIC_MODEL_OPENAI } from "../lib/types";
+import { SEMANTIC_MODEL_GEMINI, SEMANTIC_MODEL_LOCAL, SEMANTIC_MODEL_OPENAI } from "../lib/types";
 import type { AiAccountSuggestion, AiKeywordSuggestion, MastodonAccount } from "../lib/types";
+import { AiProviderControl, useAiProvider } from "./ai-provider-control";
 
 function AccountRow({
   account,
@@ -54,10 +55,11 @@ export function FediverseModeration() {
   const filters = useQuery({ queryKey: ["fedipod", "filters"], queryFn: api.fedipod.filters });
   const aiStatus = useQuery({ queryKey: ["fedipod", "ai", "status"], queryFn: api.ai.status });
   const aiEnabled = aiStatus.data?.enabled ?? false;
+  const [aiProvider, setAiProvider] = useAiProvider(aiStatus.data);
   const suggestions = useQuery({
-    queryKey: ["fedipod", "ai", "moderation-suggestions"],
-    queryFn: api.ai.suggestModeration,
-    enabled: aiEnabled,
+    queryKey: ["fedipod", "ai", "moderation-suggestions", aiProvider],
+    queryFn: () => api.ai.suggestModeration(aiProvider ?? undefined),
+    enabled: aiEnabled && Boolean(aiProvider),
   });
 
   const refresh = async () => {
@@ -178,7 +180,7 @@ export function FediverseModeration() {
             <SegmentedControlItem value="0.60">Balanced</SegmentedControlItem>
             <SegmentedControlItem value="0.54">Broad</SegmentedControlItem>
           </SegmentedControl>
-          {aiEnabled ? (
+          {aiStatus.data?.providers.length ? (
             <SegmentedControl
               size="small"
               value={semanticBackend}
@@ -186,7 +188,12 @@ export function FediverseModeration() {
               aria-label="Semantic matching backend"
             >
               <SegmentedControlItem value={SEMANTIC_MODEL_LOCAL}>Local</SegmentedControlItem>
-              <SegmentedControlItem value={SEMANTIC_MODEL_OPENAI}>OpenAI</SegmentedControlItem>
+              {aiStatus.data.providers.includes("openai") ? (
+                <SegmentedControlItem value={SEMANTIC_MODEL_OPENAI}>OpenAI</SegmentedControlItem>
+              ) : null}
+              {aiStatus.data.providers.includes("gemini") ? (
+                <SegmentedControlItem value={SEMANTIC_MODEL_GEMINI}>Gemini</SegmentedControlItem>
+              ) : null}
             </SegmentedControl>
           ) : null}
           <Label className="gap-2"><Switch checked={wholeWord} onCheckedChange={setWholeWord} />Whole-word exact match</Label>
@@ -202,6 +209,8 @@ export function FediverseModeration() {
                 <Badge size="small" color={filter.action === "hide" ? "red" : "blue"}>{filter.action}</Badge>
                 {filter.keywords.some((item) => item.semanticModel === SEMANTIC_MODEL_OPENAI)
                   ? <Badge size="small">OpenAI</Badge>
+                  : filter.keywords.some((item) => item.semanticModel === SEMANTIC_MODEL_GEMINI)
+                    ? <Badge size="small">Gemini</Badge>
                   : filter.keywords.some((item) => item.semantic)
                     ? <Badge size="small">EmbeddingGemma</Badge>
                     : null}
@@ -217,7 +226,10 @@ export function FediverseModeration() {
 
       {aiEnabled ? (
         <section className="flex flex-col gap-3">
-          <div className="flex items-center gap-2"><Sparkles className="size-4" /><Text variant="strong">AI suggestions</Text></div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Sparkles className="size-4" /><Text variant="strong">AI suggestions</Text>
+            <AiProviderControl status={aiStatus.data} provider={aiProvider} onChange={setAiProvider} />
+          </div>
           <Text variant="small" color="tertiary">
             Based on what you already block, mute, and filter — generated fresh each time, not stored.
           </Text>

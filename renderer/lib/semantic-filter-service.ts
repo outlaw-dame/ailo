@@ -2,11 +2,12 @@ import { api } from "./api";
 import type {
   AiFilterMatchDocument,
   AiFilterMatchQuery,
+  AiProvider,
   MastodonFilter,
   MastodonFilterResult,
   MastodonStatus,
 } from "./types";
-import { SEMANTIC_MODEL_OPENAI } from "./types";
+import { SEMANTIC_MODEL_GEMINI, SEMANTIC_MODEL_OPENAI } from "./types";
 
 const MODEL = "onnx-community/embeddinggemma-300m-ONNX";
 const MODEL_REVISION = "5090578d9565bb06545b4552f76e6bc2c93e4a66";
@@ -178,20 +179,17 @@ export class SemanticFilterService {
     return new Map(unique.map((text) => [text, this.cache.get(text)!]));
   }
 
-  /**
-   * OpenAI-backed keywords (keyword.semanticModel === SEMANTIC_MODEL_OPENAI)
-   * are matched by FediPod's /api/v1/ailo/ai/filters/match instead of the
-   * local model — opt-in per keyword, see fediverse-moderation.tsx. Returns
-   * queryId ("filterId:keywordId") → the set of matching status ids.
-   */
-  private async matchOpenAiKeywords(
+  /** Remote-provider keywords are matched by FediPod instead of the local model. */
+  private async matchRemoteKeywords(
     filters: MastodonFilter[],
     documentsByStatus: Map<string, string[]>,
+    semanticModel: string,
+    provider: AiProvider,
   ): Promise<Map<string, Set<string>>> {
     const queries: AiFilterMatchQuery[] = [];
     for (const filter of filters) {
       for (const keyword of filter.keywords) {
-        if (keyword.semantic && keyword.semanticModel === SEMANTIC_MODEL_OPENAI) {
+        if (keyword.semantic && keyword.semanticModel === semanticModel) {
           queries.push({
             id: `${filter.id}:${keyword.id}`,
             text: semanticQuery(keyword.keyword),
@@ -214,7 +212,7 @@ export class SemanticFilterService {
     if (!documents.length) return new Map();
 
     try {
-      const matches = await api.ai.matchFilters(queries, documents);
+      const matches = await api.ai.matchFilters(queries, documents, provider);
       const byQuery = new Map<string, Set<string>>();
       for (const match of matches) {
         const statusId = statusIdByDocumentId.get(match.documentId);
@@ -225,7 +223,7 @@ export class SemanticFilterService {
       return byQuery;
     } catch (error) {
       console.warn(
-        "[semantic-filters] OpenAI semantic matching unavailable; those keywords are skipped this pass:",
+        `[semantic-filters] ${provider} semantic matching unavailable; those keywords are skipped this pass:`,
         error instanceof Error ? error.message : String(error),
       );
       return new Map();
@@ -255,13 +253,13 @@ export class SemanticFilterService {
     const allDocuments = [...documentsByStatus.values()].flat();
     if (!allDocuments.length) return statuses;
 
-    // Keywords stay on the local, on-device model by default (unset or
-    // anything other than SEMANTIC_MODEL_OPENAI) — behavior is unchanged from
-    // before this backend existed. Only keywords explicitly opted into
-    // SEMANTIC_MODEL_OPENAI go over the network, via matchOpenAiKeywords.
+    // Keywords stay local by default. Only explicitly selected provider
+    // models go over the network.
     const localQueries = semanticFilters.flatMap((filter) =>
       filter.keywords
-        .filter((keyword) => keyword.semantic && keyword.semanticModel !== SEMANTIC_MODEL_OPENAI)
+        .filter((keyword) => keyword.semantic
+          && keyword.semanticModel !== SEMANTIC_MODEL_OPENAI
+          && keyword.semanticModel !== SEMANTIC_MODEL_GEMINI)
         .map((keyword) => semanticQuery(keyword.keyword)),
     );
 
@@ -277,7 +275,10 @@ export class SemanticFilterService {
       }
     }
 
-    const openAiMatches = await this.matchOpenAiKeywords(semanticFilters, documentsByStatus);
+    const openAiMatches = await this.matchRemoteKeywords(
+      semanticFilters, documentsByStatus, SEMANTIC_MODEL_OPENAI, "openai");
+    const geminiMatches = await this.matchRemoteKeywords(
+      semanticFilters, documentsByStatus, SEMANTIC_MODEL_GEMINI, "gemini");
 
     for (const status of targets) {
       const documents = documentsByStatus.get(status.id) ?? [];
@@ -287,6 +288,9 @@ export class SemanticFilterService {
           if (!keyword.semantic) return false;
           if (keyword.semanticModel === SEMANTIC_MODEL_OPENAI) {
             return openAiMatches.get(`${filter.id}:${keyword.id}`)?.has(status.id) ?? false;
+          }
+          if (keyword.semanticModel === SEMANTIC_MODEL_GEMINI) {
+            return geminiMatches.get(`${filter.id}:${keyword.id}`)?.has(status.id) ?? false;
           }
           if (!localVectors.size) return false;
           const query = localVectors.get(semanticQuery(keyword.keyword));

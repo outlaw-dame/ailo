@@ -8,6 +8,7 @@ import type {
   AiFilterMatchDocument,
   AiFilterMatchQuery,
   AiModerationSuggestions,
+  AiProvider,
   AiStatus,
   FediPodConfig,
   FediPodCapabilities,
@@ -33,6 +34,7 @@ import type {
   MastodonQuotePolicy,
   MastodonTag,
   Post,
+  SafeBrowsingResult,
 } from "../types.js";
 import { DEFAULT_FEDIPOD_CONFIG } from "../types.js";
 import {
@@ -53,6 +55,7 @@ import {
   mapFilterMatches,
   mapHashtagSuggestions,
   mapModerationSuggestions,
+  mapSafeBrowsingResult,
   mapTranslation,
 } from "./fedipod-ai.js";
 import { mapCreatorAttribution, mapCreatorCard } from "./fedipod-creator.js";
@@ -567,44 +570,55 @@ class FediPodService {
     await this.authed(`/api/v2/filters/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
-  /* -------------------------- AI (OpenAI, via FediPod) --------------------- */
-  /* Ailo never holds an OpenAI key itself — every call here just proxies to  */
+  /* ------------------------ AI providers, via FediPod ---------------------- */
+  /* Ailo never holds provider keys itself — every call here just proxies to  */
   /* FediPod's /api/v1/ailo/ai/* endpoints over the existing authed session.  */
 
   async aiStatus(): Promise<AiStatus> {
     return mapAiStatus(await this.authed("/api/v1/ailo/ai/status"));
   }
 
-  async aiTranslate(text: string, targetLang: string): Promise<string> {
+  async aiTranslate(text: string, targetLang: string, provider?: AiProvider): Promise<string> {
     return mapTranslation(await this.authed("/api/v1/ailo/ai/translate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, target_lang: targetLang }),
+      body: JSON.stringify({ text, target_lang: targetLang, provider }),
     }));
   }
 
-  async aiSuggestHashtags(text: string): Promise<string[]> {
+  async aiSuggestHashtags(text: string, provider?: AiProvider): Promise<string[]> {
     return mapHashtagSuggestions(await this.authed("/api/v1/ailo/ai/hashtags/suggest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, provider }),
     }));
   }
 
-  async aiSuggestModeration(): Promise<AiModerationSuggestions> {
+  async aiSuggestModeration(provider?: AiProvider): Promise<AiModerationSuggestions> {
     return mapModerationSuggestions(await this.authed("/api/v1/ailo/ai/moderation/suggest", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider }),
     }));
   }
 
   async aiMatchFilters(
     queries: AiFilterMatchQuery[],
     documents: AiFilterMatchDocument[],
+    provider?: AiProvider,
   ): Promise<AiFilterMatch[]> {
     return mapFilterMatches(await this.authed("/api/v1/ailo/ai/filters/match", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ queries, documents }),
+      body: JSON.stringify({ queries, documents, provider }),
+    }));
+  }
+
+  async checkSafeBrowsing(urls: string[]): Promise<SafeBrowsingResult> {
+    return mapSafeBrowsingResult(await this.authed("/api/v1/ailo/safety/urls/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls }),
     }));
   }
 

@@ -18,6 +18,7 @@ import {
 } from "@glaze/core/components";
 
 import { MarkdownPreview } from "../components/markdown-preview";
+import { AiProviderControl, useAiProvider } from "../components/ai-provider-control";
 import { api } from "../lib/api";
 import { extractImageSources } from "../lib/markdown";
 import type { ImageAltText, Post } from "../lib/types";
@@ -57,8 +58,9 @@ export function EditorView() {
   const [suggestedTags, setSuggestedTags] = React.useState<string[]>([]);
 
   const aiStatus = useQuery({ queryKey: ["fedipod", "ai", "status"], queryFn: api.ai.status });
+  const [aiProvider, setAiProvider] = useAiProvider(aiStatus.data);
   const suggestHashtags = useMutation({
-    mutationFn: () => api.ai.suggestHashtags(`${title}\n\n${body}`),
+    mutationFn: () => api.ai.suggestHashtags(`${title}\n\n${body}`, aiProvider ?? undefined),
     onSuccess: (hashtags) => setSuggestedTags(hashtags),
     onError: (error: Error) => toast.error(error.message || "Could not suggest hashtags"),
   });
@@ -299,15 +301,18 @@ export function EditorView() {
 
         {aiStatus.data?.enabled ? (
           <div className="flex flex-col gap-2">
-            <Button
-              size="small"
-              variant="filled"
-              disabled={suggestHashtags.isPending || !body.trim()}
-              onClick={() => suggestHashtags.mutate()}
-            >
-              <Sparkles />
-              Suggest hashtags
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="small"
+                variant="filled"
+                disabled={suggestHashtags.isPending || !body.trim() || !aiProvider}
+                onClick={() => suggestHashtags.mutate()}
+              >
+                <Sparkles />
+                Suggest hashtags
+              </Button>
+              <AiProviderControl status={aiStatus.data} provider={aiProvider} onChange={setAiProvider} />
+            </div>
             {suggestedTags.length ? (
               <div className="flex flex-wrap gap-2">
                 {suggestedTags.map((tag) => (

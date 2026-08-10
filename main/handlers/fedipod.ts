@@ -5,7 +5,7 @@ import { normalizeHashtag } from "../services/fedipod-tags.js";
 import { postsStore } from "../services/posts-store.js";
 import type { FediverseContentType, FediverseObjectType, FediverseVisibility } from "../types.js";
 import type { MastodonQuotePolicy } from "../types.js";
-import type { AiFilterMatchDocument, AiFilterMatchQuery } from "../types.js";
+import type { AiFilterMatchDocument, AiFilterMatchQuery, AiProvider } from "../types.js";
 
 const VISIBILITIES: FediverseVisibility[] = ["public", "unlisted", "private", "direct"];
 const OBJECT_TYPES: FediverseObjectType[] = ["Note", "Article"];
@@ -27,6 +27,12 @@ function requireHashtag(value: unknown): string {
   const tag = normalizeHashtag(value);
   if (tag) return tag;
   throw new Error("Hashtag must contain letters or an underscore and no spaces or punctuation");
+}
+
+function asAiProvider(value: unknown): AiProvider | undefined {
+  if (value == null || value === "") return undefined;
+  if (value === "openai" || value === "gemini") return value;
+  throw new Error("AI provider must be openai or gemini");
 }
 
 export function registerFediPodHandlers(): void {
@@ -225,28 +231,37 @@ export function registerFediPodHandlers(): void {
     return fediPodService.crossPostStory(post, asVisibility(visibility));
   });
 
-  /* -------------------------- AI (OpenAI, via FediPod) --------------------- */
+  /* ------------------------ AI providers, via FediPod ---------------------- */
 
   ipcMain.handle("fedipod:aiStatus", async () => {
     return fediPodService.aiStatus();
   });
 
-  ipcMain.handle("fedipod:aiTranslate", async (_event, text: unknown, targetLang: unknown) => {
-    return fediPodService.aiTranslate(requireString(text, "Text"), requireString(targetLang, "Target language"));
+  ipcMain.handle("fedipod:aiTranslate", async (_event, text: unknown, targetLang: unknown, provider: unknown) => {
+    return fediPodService.aiTranslate(requireString(text, "Text"), requireString(targetLang, "Target language"), asAiProvider(provider));
   });
 
-  ipcMain.handle("fedipod:aiSuggestHashtags", async (_event, text: unknown) => {
-    return fediPodService.aiSuggestHashtags(requireString(text, "Text"));
+  ipcMain.handle("fedipod:aiSuggestHashtags", async (_event, text: unknown, provider: unknown) => {
+    return fediPodService.aiSuggestHashtags(requireString(text, "Text"), asAiProvider(provider));
   });
 
-  ipcMain.handle("fedipod:aiSuggestModeration", async () => {
-    return fediPodService.aiSuggestModeration();
+  ipcMain.handle("fedipod:aiSuggestModeration", async (_event, provider: unknown) => {
+    return fediPodService.aiSuggestModeration(asAiProvider(provider));
   });
 
-  ipcMain.handle("fedipod:aiMatchFilters", async (_event, queries: unknown, documents: unknown) => {
+  ipcMain.handle("fedipod:aiMatchFilters", async (_event, queries: unknown, documents: unknown, provider: unknown) => {
     return fediPodService.aiMatchFilters(
       Array.isArray(queries) ? queries as AiFilterMatchQuery[] : [],
       Array.isArray(documents) ? documents as AiFilterMatchDocument[] : [],
+      asAiProvider(provider),
     );
+  });
+
+  ipcMain.handle("fedipod:checkSafeBrowsing", async (_event, urls: unknown) => {
+    if (!Array.isArray(urls) || urls.length < 1 || urls.length > 50
+      || urls.some((url) => typeof url !== "string" || url.length > 2_048)) {
+      throw new Error("Safe Browsing accepts 1–50 URLs of at most 2048 characters");
+    }
+    return fediPodService.checkSafeBrowsing(urls);
   });
 }

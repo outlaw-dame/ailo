@@ -6,14 +6,40 @@ import {
   mapFilterMatches,
   mapHashtagSuggestions,
   mapModerationSuggestions,
+  mapSafeBrowsingResult,
   mapTranslation,
 } from "./fedipod-ai.js";
 
-test("maps AI status, tolerating a missing/non-boolean enabled field", () => {
-  assert.deepEqual(mapAiStatus({ enabled: true }), { enabled: true });
-  assert.deepEqual(mapAiStatus({ enabled: "true" }), { enabled: false });
-  assert.deepEqual(mapAiStatus({}), { enabled: false });
-  assert.deepEqual(mapAiStatus(null), { enabled: false });
+test("maps configured AI providers and Safe Browsing capability", () => {
+  assert.deepEqual(mapAiStatus({
+    enabled: true,
+    providers: ["gemini", "openai", "unknown"],
+    default_provider: "gemini",
+    models: { gemini: "gemini-3.6-flash", openai: "gpt-4.1-mini" },
+    safe_browsing: { enabled: true },
+  }), {
+    enabled: true,
+    providers: ["gemini", "openai"],
+    defaultProvider: "gemini",
+    models: { gemini: "gemini-3.6-flash", openai: "gpt-4.1-mini" },
+    safeBrowsingEnabled: true,
+  });
+  assert.deepEqual(mapAiStatus({ enabled: true }), {
+    enabled: true, providers: ["openai"], defaultProvider: "openai", models: {}, safeBrowsingEnabled: false,
+  });
+  assert.deepEqual(mapAiStatus(null), {
+    enabled: false, providers: [], defaultProvider: null, models: {}, safeBrowsingEnabled: false,
+  });
+});
+
+test("maps Google Safe Browsing threats without trusting malformed entries", () => {
+  assert.deepEqual(mapSafeBrowsingResult({
+    safe: false, cached: true, checked_urls: ["https://example.test", 4],
+    threats: [{ url: "https://bad.test", threatTypes: ["MALWARE", 2] }, null],
+  }), {
+    safe: false, cached: true, checkedUrls: ["https://example.test"],
+    threats: [{ url: "https://bad.test", threatTypes: ["MALWARE"] }],
+  });
 });
 
 test("maps hashtag suggestions, dropping non-string entries", () => {
