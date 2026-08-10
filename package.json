@@ -65,13 +65,21 @@
   },
   "packageManager": "npm@11.11.0+sha512-82gRxKrh/eY5UnNorkTFcdBQAGpgjWehkfGVqAGlJjejEtJZGGJUqjo3mbBTNbc5BTnPKGVtGPBZGhElujX5cw==",
   "glaze": {
-    "capabilities": {},
+    "capabilities": {
+      "ai": {
+        "grades": [
+          "fast"
+        ],
+        "purpose": "Chats with you to help draft and refine posts before sharing them to the Fediverse.",
+        "mode": "optional"
+      }
+    },
     "sdkVersion": "0.13.0.0",
     "createdAt": "2026-08-07T17:32:32.764Z",
     "lastMigration": "tray-retina-icons",
     "host": {
       "minVersion": "0.13.0.0"
     },
-    "updatedAt": 1786286401415
+    "updatedAt": 1786315838812
   }
 }

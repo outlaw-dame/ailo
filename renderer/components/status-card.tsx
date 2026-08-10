@@ -1,6 +1,19 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, ExternalLink, Heart, Languages, Pin, Quote, Repeat2, Reply, ShieldAlert, UserPlus, VolumeX } from "lucide-react";
+import {
+  Ban,
+  BadgeCheck,
+  ExternalLink,
+  Heart,
+  Languages,
+  Pin,
+  Quote,
+  Repeat2,
+  Reply,
+  ShieldAlert,
+  UserPlus,
+  VolumeX,
+} from "lucide-react";
 import { Badge, Button, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
@@ -196,6 +209,71 @@ export function StatusCard({
                   loading="lazy"
                 />
               ))}
+            </div>
+          ) : null}
+          {images.length === 0 && s.card && s.card.url ? (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (s.card) void api.app.openExternal(s.card.url);
+              }}
+              onKeyDown={(event) => {
+                if ((event.key === "Enter" || event.key === " ") && s.card) {
+                  event.preventDefault();
+                  void api.app.openExternal(s.card.url);
+                }
+              }}
+              className="flex cursor-pointer flex-col gap-2 overflow-hidden rounded-control border border-secondary text-left transition-colors hover:bg-control-subtle/60"
+            >
+              {s.card.image ? (
+                <img
+                  src={s.card.image}
+                  alt=""
+                  className="max-h-48 w-full object-cover"
+                  loading="lazy"
+                />
+              ) : null}
+              <div className="flex flex-col gap-1 px-3 py-2.5">
+                <Text variant="small-strong" truncate>
+                  {s.card.title || s.card.url}
+                </Text>
+                {s.card.description ? (
+                  <Text variant="mini" color="tertiary" className="line-clamp-2">
+                    {s.card.description}
+                  </Text>
+                ) : null}
+                {s.card.providerName ? (
+                  <Text variant="mini" color="quaternary" truncate>{s.card.providerName}</Text>
+                ) : null}
+                {s.card.authors.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      const target = s.card?.authors[0]?.account?.url || s.card?.authors[0]?.url;
+                      if (target) void api.app.openExternal(target);
+                    }}
+                    className="mt-1 flex w-fit items-center gap-1.5 text-tertiary hover:text-primary"
+                  >
+                    <BadgeCheck className="size-3.5 shrink-0" />
+                    <Text variant="mini" color="tertiary" truncate>
+                      Credited to{" "}
+                      {s.card.authors[0]?.account
+                        ? `@${s.card.authors[0].account.acct || s.card.authors[0].account.username}`
+                        : s.card.authors[0]?.name}
+                    </Text>
+                  </button>
+                ) : null}
+                {s.card.missingAttribution ? (
+                  <div className="mt-1 flex items-center gap-1.5 text-danger">
+                    <ShieldAlert className="size-3.5 shrink-0" />
+                    <Text variant="mini" color="danger">
+                      This page names you as creator, but its domain is not in your allowed websites.
+                    </Text>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
           {translated ? (

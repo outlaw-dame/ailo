@@ -18,6 +18,7 @@ import type {
   MastodonCollectionImportResult,
   MastodonCollectionSource,
   MastodonCollectionSourcePreview,
+  MastodonCreatorAttribution,
   MastodonFilter,
   MastodonFeaturedTag,
   MastodonNotification,
@@ -94,6 +95,10 @@ export const api = {
     timeline: (options?: { maxId?: string; limit?: number }) =>
       ipc().invoke("fedipod:timeline", options ?? {}) as Promise<MastodonStatus[]>,
     notifications: () => ipc().invoke("fedipod:notifications") as Promise<MastodonNotification[]>,
+    creatorAttribution: () =>
+      ipc().invoke("fedipod:creatorAttribution") as Promise<MastodonCreatorAttribution>,
+    updateCreatorAttribution: (domains: string[]) =>
+      ipc().invoke("fedipod:updateCreatorAttribution", domains) as Promise<MastodonCreatorAttribution>,
     blocks: () => ipc().invoke("fedipod:blocks") as Promise<MastodonAccount[]>,
     mutes: () => ipc().invoke("fedipod:mutes") as Promise<MastodonAccount[]>,
     filters: () => ipc().invoke("fedipod:filters") as Promise<MastodonFilter[]>,

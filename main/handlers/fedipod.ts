@@ -89,6 +89,16 @@ export function registerFediPodHandlers(): void {
     return fediPodService.fetchNotifications();
   });
 
+  ipcMain.handle("fedipod:creatorAttribution", async () =>
+    fediPodService.fetchCreatorAttribution());
+  ipcMain.handle("fedipod:updateCreatorAttribution", async (_event, domains: unknown) => {
+    if (!Array.isArray(domains) || domains.length > 100
+      || domains.some((domain) => typeof domain !== "string")) {
+      throw new Error("Creator domains must be an array of at most 100 domain names");
+    }
+    return fediPodService.updateCreatorAttribution(domains);
+  });
+
   ipcMain.handle("fedipod:blocks", async () => fediPodService.fetchBlockedAccounts());
   ipcMain.handle("fedipod:mutes", async () => fediPodService.fetchMutedAccounts());
   ipcMain.handle("fedipod:filters", async () => fediPodService.fetchFilters());

@@ -21,6 +21,7 @@ import type {
   MastodonCollectionImportResult,
   MastodonCollectionSource,
   MastodonCollectionSourcePreview,
+  MastodonCreatorAttribution,
   MastodonMediaAttachment,
   MastodonFilter,
   MastodonFilterResult,
@@ -54,6 +55,7 @@ import {
   mapModerationSuggestions,
   mapTranslation,
 } from "./fedipod-ai.js";
+import { mapCreatorAttribution, mapCreatorCard } from "./fedipod-creator.js";
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
@@ -117,6 +119,7 @@ function mapMedia(raw: unknown): MastodonMediaAttachment {
     description: typeof r.description === "string" ? r.description : null,
   };
 }
+
 
 function mapFilter(raw: unknown): MastodonFilter {
   const r = isRecord(raw) ? raw : {};
@@ -186,6 +189,7 @@ export function mapStatus(raw: unknown, depth = 0): MastodonStatus {
     visibility: str(r.visibility, "public"),
     account: mapAccount(r.account),
     mediaAttachments: arr(r.media_attachments).map(mapMedia),
+    card: isRecord(r.card) ? mapCreatorCard(r.card, mapAccount) : null,
     favouritesCount: num(r.favourites_count),
     reblogsCount: num(r.reblogs_count),
     repliesCount: num(r.replies_count),
@@ -448,6 +452,28 @@ class FediPodService {
 
   async isConnected(): Promise<boolean> {
     return (await this.getStatus()).connected;
+  }
+
+  /** Handle to credit as content creator (fediverse:creator) when publishing, if connected. */
+  async creatorHandle(): Promise<string | null> {
+    const status = await this.getStatus();
+    if (!status.connected || !status.account) return null;
+    return status.account.acct || status.account.username || null;
+  }
+
+  async fetchCreatorAttribution(): Promise<MastodonCreatorAttribution> {
+    return mapCreatorAttribution(await this.authed("/api/v1/accounts/verify_credentials"), mapAccount);
+  }
+
+  async updateCreatorAttribution(domains: string[]): Promise<MastodonCreatorAttribution> {
+    const raw = await this.authed("/api/v1/accounts/update_credentials", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attribution_domains: domains }),
+    });
+    const result = mapCreatorAttribution(raw, mapAccount);
+    await this.config.update((current) => ({ ...current, account: result.account }));
+    return result;
   }
 
   /* -------------------------------- reads -------------------------------- */

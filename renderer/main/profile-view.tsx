@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, CalendarDays, Github, Globe2, Link2, Unplug } from "lucide-react";
+import { AtSign, CalendarDays, Copy, Github, Globe2, Link2, Unplug } from "lucide-react";
 import {
   Badge,
   Button,
@@ -12,6 +12,7 @@ import {
   FieldSet,
   Input,
   ScrollArea,
+  Switch,
   Text,
   Textarea,
   toast,
@@ -52,6 +53,11 @@ export function ProfileView() {
     queryKey: ["fedipod", "status"],
     queryFn: () => api.fedipod.status(),
   });
+  const creatorQuery = useQuery({
+    queryKey: ["fedipod", "creator-attribution"],
+    queryFn: api.fedipod.creatorAttribution,
+    enabled: Boolean(fediQuery.data?.connected),
+  });
   const reposQuery = useQuery({
     queryKey: ["github", "repos"],
     queryFn: () => api.github.listRepos(),
@@ -68,12 +74,17 @@ export function ProfileView() {
   const [fediToken, setFediToken] = React.useState("");
   const [fediPassword, setFediPassword] = React.useState("");
   const [fediNeedsPassword, setFediNeedsPassword] = React.useState(false);
+  const [creatorDomains, setCreatorDomains] = React.useState("");
   const [hydrated, setHydrated] = React.useState(false);
 
   React.useEffect(() => {
     const url = fediQuery.data?.baseUrl;
     if (url) setFediBaseUrl(url);
   }, [fediQuery.data?.baseUrl]);
+
+  React.useEffect(() => {
+    if (creatorQuery.data) setCreatorDomains(creatorQuery.data.domains.join("\n"));
+  }, [creatorQuery.data]);
 
   React.useEffect(() => {
     const profile = profileQuery.data;
@@ -207,6 +218,25 @@ export function ProfileView() {
       toast.success("FediPod disconnected");
     },
     onError: (error: Error) => toast.error(error.message || "Could not disconnect FediPod"),
+  });
+
+  const setCreatorAttribution = useMutation({
+    mutationFn: (enabled: boolean) => api.profile.update({ fediverseCreatorEnabled: enabled }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["profile"] });
+    },
+    onError: (error: Error) => toast.error(error.message || "Could not update creator attribution"),
+  });
+  const saveCreatorDomains = useMutation({
+    mutationFn: () => api.fedipod.updateCreatorAttribution(
+      creatorDomains.split(/[\n,]+/).map((domain) => domain.trim()).filter(Boolean),
+    ),
+    onSuccess: async (result) => {
+      setCreatorDomains(result.domains.join("\n"));
+      await queryClient.invalidateQueries({ queryKey: ["fedipod", "creator-attribution"] });
+      toast.success("Creator attribution domains saved");
+    },
+    onError: (error: Error) => toast.error(error.message || "Could not save creator domains"),
   });
 
   const calPath = normalizeCalPath(calComPath);
@@ -368,6 +398,74 @@ export function ProfileView() {
                   <Unplug />
                   Disconnect
                 </Button>
+              </div>
+
+              <div className="flex flex-col gap-2 rounded-control border border-secondary px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <Text variant="small-strong">Credit me as creator</Text>
+                    <Text variant="mini" color="tertiary">
+                      Adds a fediverse_creator marker to published Markdown. Your site template must
+                      emit the HTML tag below for Mastodon to see it.
+                    </Text>
+                  </div>
+                  <Switch
+                    checked={profileQuery.data?.fediverseCreatorEnabled ?? true}
+                    disabled={setCreatorAttribution.isPending}
+                    onCheckedChange={(checked) => setCreatorAttribution.mutate(checked)}
+                  />
+                </div>
+                <div className="flex items-center gap-2 rounded-control bg-well/50 px-2.5 py-2">
+                  <Text
+                    variant="mini"
+                    color="tertiary"
+                    className="min-w-0 flex-1 truncate font-mono"
+                    title={creatorQuery.data?.tag}
+                  >
+                    {creatorQuery.data?.tag || `Loading creator tag for @${fedi.account.acct || fedi.account.username}…`}
+                  </Text>
+                  <Button
+                    size="small"
+                    variant="transparent"
+                    iconOnly
+                    aria-label="Copy meta tag"
+                    disabled={!creatorQuery.data?.tag}
+                    onClick={() => {
+                      const tag = creatorQuery.data?.tag;
+                      if (!tag) return;
+                      void navigator.clipboard.writeText(tag).then(
+                        () => toast.success("Copied"),
+                        () => toast.error("Could not copy"),
+                      );
+                    }}
+                  >
+                    <Copy />
+                  </Button>
+                </div>
+                <Text variant="mini" color="quaternary">
+                  Paste this into each article's HTML head. Attribution is accepted only from an
+                  allowed domain configured on your federated profile.
+                </Text>
+                <Field
+                  label="Websites allowed to credit you"
+                  description="One domain per line. A domain also permits its subdomains; paths and URLs are rejected."
+                  orientation="vertical"
+                >
+                  <Textarea
+                    value={creatorDomains}
+                    onChange={(event) => setCreatorDomains(event.target.value)}
+                    placeholder={"example.com\nnews.example.org"}
+                  />
+                </Field>
+                <div className="flex items-center justify-between gap-2">
+                  {creatorQuery.isError ? (
+                    <Text variant="mini" color="danger">{(creatorQuery.error as Error).message}</Text>
+                  ) : <span />}
+                  <Button size="small" variant="accent" disabled={saveCreatorDomains.isPending}
+                    onClick={() => saveCreatorDomains.mutate()}>
+                    Save allowed domains
+                  </Button>
+                </div>
               </div>
             </div>
           ) : (

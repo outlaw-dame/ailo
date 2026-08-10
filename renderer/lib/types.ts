@@ -27,6 +27,7 @@ export interface Profile {
   githubLogin: string | null;
   githubRepo: string | null;
   solidWebId: string | null;
+  fediverseCreatorEnabled: boolean;
 }
 
 export interface GitHubUser {
@@ -80,6 +81,29 @@ export interface MastodonMediaAttachment {
   description: string | null;
 }
 
+export interface MastodonCreatorAttribution {
+  account: MastodonAccount;
+  domains: string[];
+  tag: string;
+}
+
+export interface MastodonCardAuthor {
+  name: string;
+  url: string;
+  account: MastodonAccount | null;
+}
+
+export interface MastodonCard {
+  url: string;
+  title: string;
+  description: string;
+  image: string | null;
+  providerName: string;
+  providerUrl: string;
+  authors: MastodonCardAuthor[];
+  missingAttribution: boolean;
+}
+
 export interface MastodonStatus {
   id: string;
   uri: string;
@@ -95,6 +119,7 @@ export interface MastodonStatus {
   visibility: string;
   account: MastodonAccount;
   mediaAttachments: MastodonMediaAttachment[];
+  card: MastodonCard | null;
   favouritesCount: number;
   reblogsCount: number;
   repliesCount: number;

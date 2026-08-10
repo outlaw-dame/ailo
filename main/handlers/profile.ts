@@ -15,6 +15,9 @@ function parseProfilePatch(value: unknown): Partial<Profile> {
   if (typeof value.calComPath === "string") patch.calComPath = value.calComPath;
   if (typeof value.solidIssuer === "string") patch.solidIssuer = value.solidIssuer;
   if (typeof value.solidPodRoot === "string") patch.solidPodRoot = value.solidPodRoot;
+  if (typeof value.fediverseCreatorEnabled === "boolean") {
+    patch.fediverseCreatorEnabled = value.fediverseCreatorEnabled;
+  }
   return patch;
 }
 

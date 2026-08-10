@@ -1,4 +1,5 @@
 import type { Post } from "../types.js";
+import { fediPodService } from "./fedipod-service.js";
 import { profileStore } from "./profile-store.js";
 import { solidOAuth } from "./solid-oauth.js";
 
@@ -16,13 +17,16 @@ function ensureTrailingSlash(url: string): string {
   return url.endsWith("/") ? url : `${url}/`;
 }
 
-function postToMarkdown(post: Post): string {
+function postToMarkdown(post: Post, creatorHandle: string | null): string {
   const lines = [
     "---",
     `title: ${JSON.stringify(post.title)}`,
     `date: ${post.publishedAt ?? post.updatedAt}`,
     `id: ${post.id}`,
     post.contentWarning ? `content_warning: ${JSON.stringify(post.contentWarning)}` : null,
+    // Lets a static-site template emit <meta name="fediverse:creator"> so links
+    // shared to Mastodon credit this author (Mastodon's creator-tag feature).
+    creatorHandle ? `fediverse_creator: ${JSON.stringify(`@${creatorHandle}`)}` : null,
     post.tags.length > 0
       ? `tags: [${post.tags.map((tag) => JSON.stringify(tag)).join(", ")}]`
       : null,
@@ -124,10 +128,14 @@ class SolidService {
     const container = await resolvePostsContainer();
     await ensureContainer(container);
 
+    const profile = await profileStore.get();
+    const creatorHandle = profile.fediverseCreatorEnabled
+      ? await fediPodService.creatorHandle()
+      : null;
     const date = (post.publishedAt ?? post.updatedAt).slice(0, 10);
     const filename = `${date}-${slugify(post.title)}-${post.id.slice(0, 8)}.md`;
     const resourceUrl = new URL(filename, container).toString();
-    const body = postToMarkdown(post);
+    const body = postToMarkdown(post, creatorHandle);
 
     const response = await solidOAuth.authorizedFetch(resourceUrl, {
       method: "PUT",
@@ -145,7 +153,6 @@ class SolidService {
     }
 
     // Remember pod root if user had not set one.
-    const profile = await profileStore.get();
     if (!profile.solidPodRoot) {
       const root = container.replace(/ailo\/posts\/?$/, "");
       await profileStore.update({ solidPodRoot: root });

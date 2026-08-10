@@ -24,6 +24,8 @@ function validateProfile(value: unknown): Profile {
     githubLogin: optionalString(value.githubLogin),
     githubRepo: optionalString(value.githubRepo),
     solidWebId: optionalString(value.solidWebId),
+    fediverseCreatorEnabled:
+      typeof value.fediverseCreatorEnabled === "boolean" ? value.fediverseCreatorEnabled : true,
   };
 }
 
@@ -50,6 +52,10 @@ class ProfileStore {
       githubLogin: patch.githubLogin !== undefined ? patch.githubLogin : current.githubLogin,
       githubRepo: patch.githubRepo !== undefined ? patch.githubRepo : current.githubRepo,
       solidWebId: patch.solidWebId !== undefined ? patch.solidWebId : current.solidWebId,
+      fediverseCreatorEnabled:
+        patch.fediverseCreatorEnabled !== undefined
+          ? patch.fediverseCreatorEnabled
+          : current.fediverseCreatorEnabled,
     }));
   }
 }

@@ -1,4 +1,5 @@
 import type { Post } from "../types.js";
+import { fediPodService } from "./fedipod-service.js";
 import { githubOAuth } from "./github-oauth.js";
 import { profileStore } from "./profile-store.js";
 
@@ -38,7 +39,7 @@ function slugify(input: string): string {
   );
 }
 
-function postToMarkdown(post: Post): string {
+function postToMarkdown(post: Post, creatorHandle: string | null): string {
   const tags = post.tags.length > 0 ? post.tags.join(", ") : "";
   const altBlock =
     post.altTexts.length > 0
@@ -50,6 +51,9 @@ function postToMarkdown(post: Post): string {
     `date: ${post.publishedAt ?? post.updatedAt}`,
     `id: ${post.id}`,
     post.contentWarning ? `content_warning: ${JSON.stringify(post.contentWarning)}` : null,
+    // Lets a static-site template emit <meta name="fediverse:creator"> so links
+    // shared to Mastodon credit this author (Mastodon's creator-tag feature).
+    creatorHandle ? `fediverse_creator: ${JSON.stringify(`@${creatorHandle}`)}` : null,
     tags ? `tags: [${post.tags.map((tag) => JSON.stringify(tag)).join(", ")}]` : null,
     altBlock
       ? `alt_texts: |\n${altBlock
@@ -202,9 +206,12 @@ class GitHubService {
     const [owner, repo] = profile.githubRepo.split("/");
     if (!owner || !repo) throw new Error(`Invalid repository: ${profile.githubRepo}`);
 
+    const creatorHandle = profile.fediverseCreatorEnabled
+      ? await fediPodService.creatorHandle()
+      : null;
     const date = (post.publishedAt ?? post.updatedAt).slice(0, 10);
     const filePath = `posts/${date}-${slugify(post.title)}-${post.id.slice(0, 8)}.md`;
-    const content = Buffer.from(postToMarkdown(post), "utf-8").toString("base64");
+    const content = Buffer.from(postToMarkdown(post, creatorHandle), "utf-8").toString("base64");
     const message = post.githubPath ? `Update post: ${post.title}` : `Publish post: ${post.title}`;
 
     let sha: string | undefined;
