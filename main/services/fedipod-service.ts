@@ -38,6 +38,7 @@ import type {
   MastodonFilterResult,
   FilterInput,
   ModerationStatsBundle,
+  ModerationDomainBreakdown,
   MastodonFeaturedTag,
   MastodonNotification,
   MastodonRelationship,
@@ -1060,21 +1061,41 @@ class FediPodService {
 
   /* --------------------------- Moderation summary --------------------------- */
 
-  private async intakeModerationStats(days: number): Promise<{ blockedActor: number; blockedDomain: number }> {
+  private async intakeModerationStats(
+    days: number,
+  ): Promise<{ blockedActor: number; blockedDomain: number; topDomains: ModerationDomainBreakdown[] }> {
     const raw = await this.authed(`/api/v1/ailo/moderation/intake-stats?days=${days}`);
     const r = isRecord(raw) ? raw : {};
-    return { blockedActor: num(r.blockedActor), blockedDomain: num(r.blockedDomain) };
+    const topDomains = arr(r.topDomains).map((entry) => {
+      const e = isRecord(entry) ? entry : {};
+      return { domain: str(e.domain), count: num(e.count) };
+    }).filter((entry) => entry.domain);
+    return { blockedActor: num(r.blockedActor), blockedDomain: num(r.blockedDomain), topDomains };
   }
 
   async moderationStats(days = 7): Promise<ModerationStatsBundle> {
-    const [blocks, mutes, domainBlocks, filters, local, intake] = await Promise.all([
+    // The "previous week" window (days*2) is fetched purely for the trend
+    // arrow on the headline number — everything else in this bundle only
+    // ever looks at the current `days` window.
+    const [blocks, mutes, domainBlocks, filters, local, localPrevWindow, intake, intakePrevWindow] = await Promise.all([
       this.fetchBlockedAccounts(),
       this.fetchMutedAccounts(),
       this.fetchDomainBlocks(),
       this.fetchFilters(),
       localWeeklyModerationStats(days),
+      localWeeklyModerationStats(days * 2),
       this.intakeModerationStats(days),
+      this.intakeModerationStats(days * 2),
     ]);
+    const filterTitleById = new Map(filters.map((filter) => [filter.id, filter.title]));
+    const topFilters = local.byFilter.map((entry) => ({
+      title: filterTitleById.get(entry.filterId) ?? "Deleted filter",
+      count: entry.count,
+    }));
+
+    const contentBlocked = local.filteredPosts + intake.blockedActor + intake.blockedDomain;
+    const contentBlockedPrevWindow = localPrevWindow.filteredPosts + intakePrevWindow.blockedActor + intakePrevWindow.blockedDomain;
+
     return {
       blockedAccounts: blocks.length,
       newBlockedAccounts: local.newBlocks,
@@ -1086,6 +1107,11 @@ class FediPodService {
       activeKeywords: filters.reduce((sum, filter) => sum + filter.keywords.length, 0),
       filteredPosts: local.filteredPosts,
       intakeBlockedPosts: intake.blockedActor + intake.blockedDomain,
+      // days*2 counts the current window too, so subtracting it out leaves
+      // just the single week immediately before this one.
+      previousWeekContentBlocked: Math.max(0, contentBlockedPrevWindow - contentBlocked),
+      topDomains: intake.topDomains,
+      topFilters,
     };
   }
 

@@ -165,8 +165,20 @@ function TranslationSettingsPage() {
   </div>;
 }
 
+const PAGE_IDS = new Set<SettingsPage>(PAGES.map((item) => item.id));
+
+// A fresh settings window can be opened straight to a page (see
+// windows/settings-window.ts's `initialPage` — used by the weekly-digest
+// notification's click handler) via a `?page=` query param, read once here.
+function initialPageFromUrl(): SettingsPage {
+  const requested = new URLSearchParams(window.location.search).get("page");
+  return requested && PAGE_IDS.has(requested as SettingsPage) ? (requested as SettingsPage) : "accounts";
+}
+
 export function SettingsView({ embedded = false }: { embedded?: boolean } = {}) {
-  const [page, setPage] = React.useState<SettingsPage>("accounts");
+  // Embedded settings share the main window's URL, which was never given a
+  // `?page=` for this purpose — only a dedicated settings window's own URL is.
+  const [page, setPage] = React.useState<SettingsPage>(() => (embedded ? "accounts" : initialPageFromUrl()));
   React.useEffect(() => {
     if (embedded) return;
     const handleKeyDown = (event: KeyboardEvent) => {

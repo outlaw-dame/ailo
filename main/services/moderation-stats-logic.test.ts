@@ -45,6 +45,16 @@ test("withFilterHits records a new event per distinct key", () => {
   assert.equal(computeWeeklyStats(state, 7, now).filteredPosts, 2, "the duplicate key in one call is not double-counted");
 });
 
+test("computeWeeklyStats breaks filter hits down by filter, top 5, most first", () => {
+  const now = Date.now();
+  let state = createDefaultState();
+  state = withFilterHits(state, ["s1::f1", "s2::f1", "s3::f1", "s4::f2"], now);
+  assert.deepEqual(computeWeeklyStats(state, 7, now).byFilter, [
+    { filterId: "f1", count: 3 },
+    { filterId: "f2", count: 1 },
+  ]);
+});
+
 test("withFilterHits does not recount the same post/filter pair within the dedupe window", () => {
   const now = Date.now();
   let state = createDefaultState();

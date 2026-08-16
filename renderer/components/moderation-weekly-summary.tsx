@@ -4,7 +4,7 @@ import { NotebookText, Sparkles } from "lucide-react";
 import { Button, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
-import type { AiAccountSuggestion, AiKeywordSuggestion } from "../lib/types";
+import type { AiAccountSuggestion, AiDomainSuggestion, AiKeywordSuggestion } from "../lib/types";
 import { AiProviderControl, useAiProvider } from "./ai-provider-control";
 
 function StatTile({ label, value, detail }: { label: string; value: React.ReactNode; detail?: string }) {
@@ -13,6 +13,29 @@ function StatTile({ label, value, detail }: { label: string; value: React.ReactN
       <Text variant="mini" color="tertiary">{label}</Text>
       <Text variant="heading3">{value}</Text>
       {detail ? <Text variant="mini" color="tertiary">{detail}</Text> : null}
+    </div>
+  );
+}
+
+// "▲ 4 vs last week" / "▼ 2 vs last week" / "same as last week" — `previous`
+// is the single 7-day window immediately before `current`'s, not a delta.
+function trendLabel(current: number, previous: number): string {
+  const diff = current - previous;
+  if (diff === 0) return "same as last week";
+  return `${diff > 0 ? "▲" : "▼"} ${Math.abs(diff)} vs last week`;
+}
+
+function BreakdownList({ title, rows }: { title: string; rows: { label: string; count: number }[] }) {
+  if (!rows.length) return null;
+  return (
+    <div className="flex min-w-40 flex-1 flex-col gap-1">
+      <Text variant="mini" color="tertiary">{title}</Text>
+      {rows.map((row) => (
+        <div key={row.label} className="flex items-center justify-between gap-2">
+          <Text variant="small" truncate>{row.label}</Text>
+          <Text variant="small" color="tertiary">{row.count}</Text>
+        </div>
+      ))}
     </div>
   );
 }
@@ -82,6 +105,15 @@ export function ModerationWeeklySummary() {
     },
     onError: (error: Error) => toast.error(error.message),
   });
+  const acceptDomainSuggestion = useMutation({
+    mutationFn: (suggestion: AiDomainSuggestion) => api.fedipod.setDomainBlock(suggestion.domain, true),
+    onSuccess: async (_result, suggestion) => {
+      setDismissed((prev) => new Set(prev).add(`domain:${suggestion.domain}`));
+      await refresh();
+      toast.success(`Blocked domain ${suggestion.domain}`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   const s = stats.data;
   const contentBlocked = s ? s.filteredPosts + s.intakeBlockedPosts : null;
@@ -114,9 +146,19 @@ export function ModerationWeeklySummary() {
         <StatTile label="Active filters" value={s?.activeFilters ?? "—"}
           detail={s ? `${s.activeKeywords} keyword${s.activeKeywords === 1 ? "" : "s"}/phrase${s.activeKeywords === 1 ? "" : "s"}` : undefined} />
         <StatTile label="Content blocked this week" value={contentBlocked ?? "—"}
-          detail={s ? `${s.filteredPosts} hidden by filters, ${s.intakeBlockedPosts} kept from reaching you` : undefined} />
+          detail={s ? `${s.filteredPosts} hidden by filters, ${s.intakeBlockedPosts} kept from reaching you`
+            + ` · ${trendLabel(contentBlocked!, s.previousWeekContentBlocked)}` : undefined} />
       </div>
       {stats.isError ? <Text variant="mini" color="danger">Could not load this week's moderation stats.</Text> : null}
+
+      {s && (s.topDomains.length || s.topFilters.length) ? (
+        <div className="flex flex-wrap gap-4">
+          <BreakdownList title="Top domains blocked"
+            rows={s.topDomains.map((d) => ({ label: d.domain, count: d.count }))} />
+          <BreakdownList title="By filter"
+            rows={s.topFilters.map((f) => ({ label: f.title, count: f.count }))} />
+        </div>
+      ) : null}
 
       {aiEnabled ? (
         <div className="flex flex-col gap-2">
@@ -154,11 +196,11 @@ export function ModerationWeeklySummary() {
             .map((item) => (
               <div key={`domain:${item.domain}`} className="flex items-center gap-3 rounded-control border border-secondary px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <Text variant="small">{item.domain}</Text>
-                  <Text variant="mini" color="tertiary" truncate>
-                    {item.reason} — domain blocking isn&apos;t available from this panel yet.
-                  </Text>
+                  <Text variant="small">Block domain: {item.domain}</Text>
+                  <Text variant="mini" color="tertiary" truncate>{item.reason}</Text>
                 </div>
+                <Button size="small" variant="filled" disabled={acceptDomainSuggestion.isPending}
+                  onClick={() => acceptDomainSuggestion.mutate(item)}>Accept</Button>
                 <Button size="small" variant="transparent"
                   onClick={() => setDismissed((prev) => new Set(prev).add(`domain:${item.domain}`))}>Dismiss</Button>
               </div>

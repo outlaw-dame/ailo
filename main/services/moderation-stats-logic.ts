@@ -8,6 +8,9 @@ export type ModerationEventKind = ModerationActionKind | "filter-hit";
 export interface ModerationEvent {
   ts: number;
   kind: ModerationEventKind;
+  /** Only set on a "filter-hit" event — which filter matched, for the
+   * "by filter" breakdown. */
+  filterId?: string;
 }
 
 export interface ModerationState {
@@ -33,7 +36,12 @@ function isEvent(value: unknown): value is ModerationEvent {
 
 export function validateState(value: unknown): ModerationState {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const events = Array.isArray(source.events) ? source.events.filter(isEvent) : [];
+  const events = Array.isArray(source.events)
+    ? source.events.filter(isEvent).map((event) => (
+      typeof (event as { filterId?: unknown }).filterId === "string"
+        ? event : { ts: event.ts, kind: event.kind }
+    ))
+    : [];
   const rawSeen = source.seenFilterHits && typeof source.seenFilterHits === "object"
     ? source.seenFilterHits as Record<string, unknown> : {};
   const seenFilterHits = Object.fromEntries(
@@ -66,10 +74,16 @@ export function withFilterHits(state: ModerationState, keys: string[], now: numb
     const lastSeen = pruned.seenFilterHits[key];
     if (lastSeen != null && now - lastSeen < FILTER_HIT_DEDUPE_MS) continue;
     pruned.seenFilterHits[key] = now;
-    pruned.events.push({ ts: now, kind: "filter-hit" });
+    const filterId = key.split("::")[1];
+    pruned.events.push(filterId ? { ts: now, kind: "filter-hit", filterId } : { ts: now, kind: "filter-hit" });
   }
   pruned.events = pruned.events.slice(-MAX_EVENTS);
   return pruned;
+}
+
+export interface ModerationFilterHitBreakdown {
+  filterId: string;
+  count: number;
 }
 
 export interface ModerationWeeklyStats {
@@ -77,16 +91,29 @@ export interface ModerationWeeklyStats {
   newMutes: number;
   newDomainBlocks: number;
   filteredPosts: number;
+  /** Top 5 filters by hit count, most first — filter TITLES are resolved by
+   * the caller (moderation-stats.ts has no access to the filter list). */
+  byFilter: ModerationFilterHitBreakdown[];
 }
 
 export function computeWeeklyStats(state: ModerationState, days: number, now: number): ModerationWeeklyStats {
   const cutoff = now - days * 24 * 60 * 60 * 1000;
   const recent = state.events.filter((event) => event.ts >= cutoff);
   const count = (kind: ModerationEventKind) => recent.filter((event) => event.kind === kind).length;
+  const filterCounts = new Map<string, number>();
+  for (const event of recent) {
+    if (event.kind !== "filter-hit" || !event.filterId) continue;
+    filterCounts.set(event.filterId, (filterCounts.get(event.filterId) ?? 0) + 1);
+  }
+  const byFilter = [...filterCounts.entries()]
+    .map(([filterId, hitCount]) => ({ filterId, count: hitCount }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
   return {
     newBlocks: count("block"),
     newMutes: count("mute"),
     newDomainBlocks: count("domain-block"),
     filteredPosts: count("filter-hit"),
+    byFilter,
   };
 }

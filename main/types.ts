@@ -407,6 +407,20 @@ export interface ModerationStatsBundle {
   activeKeywords: number;
   filteredPosts: number;
   intakeBlockedPosts: number;
+  /** filteredPosts + intakeBlockedPosts, for the single 7-day window immediately
+   * before this one — the trend arrow's comparison point, not a delta. */
+  previousWeekContentBlocked: number;
+  topDomains: ModerationDomainBreakdown[];
+  topFilters: ModerationFilterBreakdown[];
+}
+
+export interface ModerationDomainBreakdown {
+  domain: string;
+  count: number;
+}
+export interface ModerationFilterBreakdown {
+  title: string;
+  count: number;
 }
 
 export interface AiFilterMatchQuery {

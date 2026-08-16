@@ -3,7 +3,11 @@ import { getPreloadPath, getWindowUrl } from "./window-paths.js";
 
 let settingsWindow: BrowserWindow | null = null;
 
-export async function openSettingsWindow(): Promise<void> {
+// `initialPage` only takes effect on a fresh window (query param, read once
+// by settings-view.tsx on mount) — an already-open window is just shown as
+// is rather than force-navigated, so it doesn't yank a page out from under
+// whatever the user is already doing there.
+export async function openSettingsWindow(initialPage?: string): Promise<void> {
   // If window exists and is not destroyed, just show it
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     logger.debug("settings", "Settings window already exists, showing it");
@@ -35,7 +39,8 @@ export async function openSettingsWindow(): Promise<void> {
     settingsWindow = null;
   });
 
-  const url = await getWindowUrl("settings-window.html");
+  const baseUrl = await getWindowUrl("settings-window.html");
+  const url = initialPage ? `${baseUrl}?page=${encodeURIComponent(initialPage)}` : baseUrl;
   logger.info("settings", "Loading settings URL", { url });
 
   await settingsWindow.loadURL(url);
