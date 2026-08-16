@@ -64,3 +64,60 @@ test("EmbeddingGemma receives its documented retrieval prompts", () => {
     "title: Garden notes | text: The best soil for tomatoes.",
   );
 });
+
+function keywordFilter(keyword: string, overrides: Partial<MastodonFilter["keywords"][number]> = {}): MastodonFilter {
+  return {
+    id: "f1", title: keyword, context: ["home"], expiresAt: null, action: "hide",
+    keywords: [{ id: "f1-0", keyword, wholeWord: false, semantic: true, semanticThreshold: 0.6, semanticModel: "embeddinggemma-300m", ...overrides }],
+  };
+}
+
+// Orthogonal, fixed vectors: any local-model call in these tests (still
+// made even when a literal match already resolved a filter — see apply()'s
+// own structure) can never itself produce a match, so every assertion below
+// is really only exercising literalMatch(), not this fake embedder.
+const nonMatchingEmbedder = async (texts: string[]) => texts.map((text) => (text.startsWith("task:") ? [1, 0] : [0, 1]));
+
+// A keyword saved with "#nsfw" (typed with the hash) must match a post that
+// says "nsfw" in plain text and one that hashtags it, and a keyword saved
+// as plain "nsfw" must match a hashtag post too — literal matching is what
+// actually guarantees this, independent of any embedding score.
+test("a literal keyword matches, regardless of hashtag vs. plain text on either side", async () => {
+  const service = new SemanticFilterService(nonMatchingEmbedder);
+  const hashtagKeyword = keywordFilter("#nsfw");
+  const plainKeyword = keywordFilter("nsfw");
+
+  const plainPost = status("hey just a heads up this post has NSFW content in it");
+  await service.apply([plainPost], [hashtagKeyword], "home");
+  assert.deepEqual(plainPost.filtered[0]?.keywordMatches, ["f1-0"], "\"#nsfw\" keyword matches plain-text \"nsfw\", case-insensitively");
+
+  const hashtagPost = status("check out my new art #nsfw #adultcontent");
+  await service.apply([hashtagPost], [plainKeyword], "home");
+  assert.deepEqual(hashtagPost.filtered[0]?.keywordMatches, ["f1-0"], "plain \"nsfw\" keyword matches a #nsfw hashtag");
+});
+
+test("literal matching honors whole-word, unlike a bare substring check", async () => {
+  const service = new SemanticFilterService(nonMatchingEmbedder);
+  const wholeWordFilter = keywordFilter("cat", { wholeWord: true, semantic: false });
+  const substringPost = status("I got a new catalog in the mail");
+  const wholeWordPost = status("my cat knocked a plant off the shelf");
+  await service.apply([substringPost], [wholeWordFilter], "home");
+  assert.equal(substringPost.filtered.length, 0, "\"catalog\" does not satisfy a whole-word \"cat\" filter");
+  await service.apply([wholeWordPost], [wholeWordFilter], "home");
+  assert.deepEqual(wholeWordPost.filtered[0]?.keywordMatches, ["f1-0"]);
+});
+
+test("a keyword saved semantic:false still matches literally — it used to match nothing at all", async () => {
+  const service = new SemanticFilterService(nonMatchingEmbedder);
+  const filter = keywordFilter("spoilers", { semantic: false });
+  const post = status("huge spoilers for the finale below");
+  await service.apply([post], [filter], "home");
+  assert.deepEqual(post.filtered[0]?.keywordMatches, ["f1-0"]);
+});
+
+test("literal matching does not fabricate a match for unrelated text", async () => {
+  const service = new SemanticFilterService(nonMatchingEmbedder);
+  const post = status("just finished my morning coffee and a walk in the park");
+  await service.apply([post], [keywordFilter("nsfw")], "home");
+  assert.equal(post.filtered.length, 0);
+});

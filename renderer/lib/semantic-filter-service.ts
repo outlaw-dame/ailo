@@ -97,6 +97,34 @@ function dot(left: number[], right: number[]): number {
   return score;
 }
 
+// Guaranteed baseline every keyword gets, semantic or not — apply() used to
+// only ever check embedding similarity, which is a real signal (see
+// matchRemoteKeywords/the local path below) but not a GUARANTEE: a single
+// short keyword like "nsfw" scores well under even this app's most
+// permissive preset against realistic post text that spells it out
+// literally, verified against the real embedding endpoint. A keyword
+// created with semantic:false (the AI moderation "accept" flow makes
+// these) had no other path to ever match anything at all — apply() skipped
+// non-semantic keywords outright. This is what actually makes "the exact
+// text, hashtag, whole word, or phrase" (the filters UI's own description)
+// true, unconditionally, independent of any threshold. A leading '#' is
+// stripped from both the keyword and the post text, mirroring
+// semanticQuery()'s own stripping on the query side, so a filter written
+// as "#nsfw" and one written as "nsfw" match the same hashtag AND
+// plain-text mentions either way.
+function stripHashes(text: string): string {
+  return text.replace(/#(?=[\p{L}\p{N}_])/gu, "");
+}
+
+function literalMatch(text: string, keyword: MastodonFilter["keywords"][number]): boolean {
+  const needle = keyword.keyword.replace(/^#+/, "").trim().toLocaleLowerCase();
+  if (!needle) return false;
+  const haystack = stripHashes(text).toLocaleLowerCase();
+  if (!keyword.wholeWord) return haystack.includes(needle);
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}_])${escaped}(?:$|[^\\p{L}\\p{N}_])`, "u").test(` ${haystack} `);
+}
+
 function isActive(filter: MastodonFilter, context: string, now = Date.now()): boolean {
   return filter.context.includes(context)
     && (!filter.expiresAt || Date.parse(filter.expiresAt) > now);
@@ -255,17 +283,30 @@ export class SemanticFilterService {
     filters: MastodonFilter[],
     context: "home" | "notifications",
   ): Promise<MastodonStatus[]> {
-    const semanticFilters = filters.filter((filter) =>
-      isActive(filter, context)
-      && filter.keywords.some((keyword) => keyword.semantic),
-    );
-    if (!semanticFilters.length || !statuses.length) return statuses;
+    const activeFilters = filters.filter((filter) => isActive(filter, context));
+    if (!activeFilters.length || !statuses.length) return statuses;
 
     const targets: MastodonStatus[] = [];
     for (const status of statuses) {
       targets.push(status);
       if (status.reblog) targets.push(status.reblog);
     }
+
+    // Literal match, every active filter, unconditionally — see
+    // literalMatch()'s own comment for why this can't be semantic-only.
+    for (const status of targets) {
+      const text = semanticText(status);
+      for (const filter of activeFilters) {
+        const matches = filter.keywords.filter((keyword) => literalMatch(text, keyword));
+        if (matches.length) {
+          status.filtered.push({ filter, keywordMatches: matches.map((keyword) => keyword.id) });
+        }
+      }
+    }
+
+    const semanticFilters = activeFilters.filter((filter) => filter.keywords.some((keyword) => keyword.semantic));
+    if (!semanticFilters.length) return statuses;
+
     const documentsByStatus = new Map(targets.map((status) => [
       status.id,
       semanticChunks(semanticText(status)).map((chunk) => semanticDocument(chunk, status.title)),
