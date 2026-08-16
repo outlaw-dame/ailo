@@ -1,12 +1,15 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { Settings, Trash2, WandSparkles } from "lucide-react";
 import { Button, ScrollArea, Text, toast, ToolbarBackButton } from "@glaze/core/components";
 
+import { FediverseComposer } from "../components/fediverse-composer";
 import { StatusCard } from "../components/status-card";
 import { api } from "../lib/api";
 import { filterCustomFeed } from "../lib/custom-feed-match";
 import { semanticFilterService } from "../lib/semantic-filter-service";
+import { useFediverseComposerState } from "../lib/use-fediverse-composer";
+import type { CustomFeed } from "../lib/types";
 
 /**
  * A single feed's own page — banner, avatar, name, description, then its
@@ -16,12 +19,24 @@ import { semanticFilterService } from "../lib/semantic-filter-service";
 export function FeedDetailView() {
   const { feedId } = useParams({ from: "/feeds/$feedId" });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const returnToFediverse = () => void navigate({ to: "/fediverse" });
   const status = useQuery({ queryKey: ["fedipod", "status"], queryFn: api.fedipod.status });
+  const capabilitiesQuery = useQuery({ queryKey: ["fedipod", "capabilities"], queryFn: () => api.fedipod.capabilities() });
+  const composer = useFediverseComposerState();
 
   const feedQuery = useQuery({
     queryKey: ["fedipod", "custom-feed", feedId],
     queryFn: () => api.fedipod.customFeed(feedId),
+    // The Feeds list (and For You's picker) already hold this exact feed
+    // object in ["fedipod","custom-feeds"] by the time you click into it —
+    // reusing it here means the page renders instantly instead of showing a
+    // loading skeleton for data that was already sitting in cache, and lets
+    // the timeline query below start immediately too instead of waiting on
+    // a second network round trip before it can even begin.
+    initialData: () => queryClient.getQueryData<CustomFeed[]>(["fedipod", "custom-feeds"])
+      ?.find((item) => item.id === feedId),
+    initialDataUpdatedAt: () => queryClient.getQueryState<CustomFeed[]>(["fedipod", "custom-feeds"])?.dataUpdatedAt,
   });
   const feed = feedQuery.data;
 
@@ -94,8 +109,7 @@ export function FeedDetailView() {
             ) : timeline.data?.length ? (
               timeline.data.map((item) => (
                 <StatusCard key={item.id} status={item} ownAccountId={status.data?.account?.id} onHashtag={returnToFediverse}
-                  onReply={() => { toast.info("Opening Fediverse to reply"); returnToFediverse(); }}
-                  onQuote={() => { toast.info("Opening Fediverse to quote"); returnToFediverse(); }} />
+                  onReply={composer.openReply} onQuote={composer.openQuote} />
               ))
             ) : (
               <Text color="tertiary">No matching public posts have reached FediPod yet.</Text>
@@ -103,6 +117,15 @@ export function FeedDetailView() {
           </section>
         </div>
       )}
+      <FediverseComposer
+        open={composer.composerOpen}
+        onOpenChange={composer.onOpenChange}
+        replyTo={composer.replyTo}
+        onCancelReply={composer.onCancelReply}
+        quoteTarget={composer.quoteTarget}
+        onCancelQuote={composer.onCancelQuote}
+        capabilities={capabilitiesQuery.data}
+      />
     </ScrollArea>
   );
 }

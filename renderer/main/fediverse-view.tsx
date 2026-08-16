@@ -21,7 +21,7 @@ import { feedRefreshInterval } from "../lib/feed-refresh";
 import { formatRelativeDate } from "../lib/markdown";
 import { semanticFilterService } from "../lib/semantic-filter-service";
 import { filterCustomFeed } from "../lib/custom-feed-match";
-import type { MastodonStatus } from "../lib/types";
+import { useFediverseComposerState } from "../lib/use-fediverse-composer";
 
 type Tab = "for-you" | "home" | "tag-feed" | "notifications" | "discover" | "tags";
 
@@ -74,9 +74,10 @@ export function FediverseView() {
 
   const [tab, setTab] = React.useState<Tab>("home");
   const [selectedTag, setSelectedTag] = React.useState<string | null>(null);
-  const [composerOpen, setComposerOpen] = React.useState(false);
-  const [replyTo, setReplyTo] = React.useState<MastodonStatus | null>(null);
-  const [quoteTarget, setQuoteTarget] = React.useState<MastodonStatus | null>(null);
+  const {
+    composerOpen, replyTo, quoteTarget, openCompose, openReply, openQuote,
+    onOpenChange: handleComposerOpenChange, onCancelReply, onCancelQuote,
+  } = useFediverseComposerState();
 
   const capabilitiesQuery = useQuery({
     queryKey: ["fedipod", "capabilities"],
@@ -182,29 +183,6 @@ export function FediverseView() {
     setSelectedTag(tag);
     setTab("tag-feed");
   }, []);
-
-  const openCompose = () => {
-    setReplyTo(null);
-    setQuoteTarget(null);
-    setComposerOpen(true);
-  };
-  const openReply = (status: MastodonStatus) => {
-    setQuoteTarget(null);
-    setReplyTo(status);
-    setComposerOpen(true);
-  };
-  const openQuote = (status: MastodonStatus) => {
-    setReplyTo(null);
-    setQuoteTarget(status);
-    setComposerOpen(true);
-  };
-  const handleComposerOpenChange = (next: boolean) => {
-    setComposerOpen(next);
-    if (!next) {
-      setReplyTo(null);
-      setQuoteTarget(null);
-    }
-  };
 
   // Hide the floating compose button while the feed is actively scrolling and
   // bring it back once scrolling settles.
@@ -412,9 +390,9 @@ export function FediverseView() {
         open={composerOpen}
         onOpenChange={handleComposerOpenChange}
         replyTo={replyTo}
-        onCancelReply={() => setReplyTo(null)}
+        onCancelReply={onCancelReply}
         quoteTarget={quoteTarget}
-        onCancelQuote={() => setQuoteTarget(null)}
+        onCancelQuote={onCancelQuote}
         capabilities={capabilities}
       />
     </div>
