@@ -4,6 +4,7 @@ import { fediPodService } from "../services/fedipod-service.js";
 import { normalizeHashtag } from "../services/fedipod-tags.js";
 import { postsStore } from "../services/posts-store.js";
 import { requireFilterKeywords } from "../services/fedipod-filter-input.js";
+import { recordFilterHits } from "../services/moderation-stats.js";
 import type { FediverseContentType, FediverseObjectType, FediverseVisibility } from "../types.js";
 import type { MastodonQuotePolicy } from "../types.js";
 import type {
@@ -473,6 +474,18 @@ export function registerFediPodHandlers(): void {
 
   ipcMain.handle("fedipod:aiSuggestModeration", async (_event, provider: unknown) => {
     return fediPodService.aiSuggestModeration(asAiProvider(provider));
+  });
+
+  ipcMain.handle("fedipod:moderationStats", async () => fediPodService.moderationStats());
+
+  ipcMain.handle("fedipod:aiSummarizeModeration", async (_event, provider: unknown) => {
+    return fediPodService.summarizeModeration(asAiProvider(provider));
+  });
+
+  ipcMain.handle("fedipod:recordFilterHits", async (_event, keys: unknown) => {
+    const list = Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : [];
+    await recordFilterHits(list);
+    return { ok: true };
   });
 
   ipcMain.handle("fedipod:aiMatchFilters", async (_event, queries: unknown, documents: unknown, provider: unknown) => {

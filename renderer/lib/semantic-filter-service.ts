@@ -302,6 +302,24 @@ export class SemanticFilterService {
     }
   }
 
+  // Best-effort: the weekly moderation summary's "content blocked" figure is
+  // a nice-to-have, not something filtering itself should ever wait on or
+  // fail because of. A wrapping try/catch, not just a Promise .catch() — the
+  // IPC bridge this ultimately calls (window.glazeAPI) throws SYNCHRONOUSLY
+  // when there is no window (every test environment for this module, since
+  // apply() is exercised directly against a fake embedder), before any
+  // Promise is even formed for .catch() to attach to.
+  private reportFilterHits(hitKeys: string[]): void {
+    if (!hitKeys.length) return;
+    try {
+      void api.fedipod.recordFilterHits(hitKeys).catch((error) => {
+        console.warn("[semantic-filters] could not record filter hits for the weekly summary:", error);
+      });
+    } catch (error) {
+      console.warn("[semantic-filters] could not record filter hits for the weekly summary:", error);
+    }
+  }
+
   async apply(
     statuses: MastodonStatus[],
     filters: MastodonFilter[],
@@ -316,6 +334,8 @@ export class SemanticFilterService {
       if (status.reblog) targets.push(status.reblog);
     }
 
+    const hitKeys: string[] = [];
+
     // Literal match, every active filter, unconditionally — see
     // literalMatch()'s own comment for why this can't be semantic-only.
     for (const status of targets) {
@@ -324,19 +344,20 @@ export class SemanticFilterService {
         const matches = filter.keywords.filter((keyword) => literalMatch(text, keyword));
         if (matches.length) {
           status.filtered.push({ filter, keywordMatches: matches.map((keyword) => keyword.id) });
+          hitKeys.push(`${status.id}::${filter.id}`);
         }
       }
     }
 
     const semanticFilters = activeFilters.filter((filter) => filter.keywords.some((keyword) => keyword.semantic));
-    if (!semanticFilters.length) return statuses;
+    if (!semanticFilters.length) { this.reportFilterHits(hitKeys); return statuses; }
 
     const documentsByStatus = new Map(targets.map((status) => [
       status.id,
       semanticChunks(semanticText(status)).map((chunk) => semanticDocument(chunk, status.title)),
     ]));
     const allDocuments = [...documentsByStatus.values()].flat();
-    if (!allDocuments.length) return statuses;
+    if (!allDocuments.length) { this.reportFilterHits(hitKeys); return statuses; }
     // OpenAI gets its own untemplated copy — see openAiQuery/openAiDocument's
     // comment. Chunking is pure string work, cheap enough to redo rather
     // than thread a second shape through everything above.
@@ -395,9 +416,11 @@ export class SemanticFilterService {
             filter,
             keywordMatches: matches.map((keyword) => keyword.id),
           });
+          hitKeys.push(`${status.id}::${filter.id}`);
         }
       }
     }
+    this.reportFilterHits(hitKeys);
     return statuses;
   }
 }

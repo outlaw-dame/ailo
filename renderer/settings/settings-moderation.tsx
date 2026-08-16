@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Globe2, ListFilter, Pencil, Sparkles, ShieldBan, Trash2, VolumeX, X } from "lucide-react";
+import { Globe2, ListFilter, Pencil, ShieldBan, Trash2, VolumeX, X } from "lucide-react";
 import {
   Badge,
   Button,
@@ -17,8 +17,8 @@ import {
 import { api } from "../lib/api";
 import { semanticFilterService } from "../lib/semantic-filter-service";
 import { SEMANTIC_MODEL_GEMINI, SEMANTIC_MODEL_LOCAL, SEMANTIC_MODEL_OPENAI } from "../lib/types";
-import type { AiAccountSuggestion, AiKeywordSuggestion, FilterInput, MastodonAccount, MastodonFilter } from "../lib/types";
-import { AiProviderControl, useAiProvider } from "../components/ai-provider-control";
+import type { FilterInput, MastodonAccount, MastodonFilter } from "../lib/types";
+import { ModerationWeeklySummary } from "../components/moderation-weekly-summary";
 
 // One keyword/phrase per line, same raw-text-until-save shape
 // custom-feed-editor.tsx already uses for its own list fields — feeding a
@@ -60,7 +60,6 @@ export function ModerationSettings() {
   const [action, setAction] = React.useState<"warn" | "hide">("warn");
   const [semanticThreshold, setSemanticThreshold] = React.useState("0.60");
   const [semanticBackend, setSemanticBackend] = React.useState(SEMANTIC_MODEL_LOCAL);
-  const [dismissed, setDismissed] = React.useState<Set<string>>(new Set());
   const [domain, setDomain] = React.useState("");
 
   const blocks = useQuery({ queryKey: ["fedipod", "blocks"], queryFn: api.fedipod.blocks });
@@ -68,13 +67,6 @@ export function ModerationSettings() {
   const domainBlocks = useQuery({ queryKey: ["fedipod", "domain-blocks"], queryFn: api.fedipod.domainBlocks });
   const filters = useQuery({ queryKey: ["fedipod", "filters"], queryFn: api.fedipod.filters });
   const aiStatus = useQuery({ queryKey: ["fedipod", "ai", "status"], queryFn: api.ai.status });
-  const aiEnabled = aiStatus.data?.enabled ?? false;
-  const [aiProvider, setAiProvider] = useAiProvider(aiStatus.data);
-  const suggestions = useQuery({
-    queryKey: ["fedipod", "ai", "moderation-suggestions", aiProvider],
-    queryFn: () => api.ai.suggestModeration(aiProvider ?? undefined),
-    enabled: aiEnabled && Boolean(aiProvider),
-  });
 
   const refresh = async () => {
     await Promise.all([
@@ -82,6 +74,7 @@ export function ModerationSettings() {
       queryClient.invalidateQueries({ queryKey: ["fedipod", "mutes"] }),
       queryClient.invalidateQueries({ queryKey: ["fedipod", "domain-blocks"] }),
       queryClient.invalidateQueries({ queryKey: ["fedipod", "filters"] }),
+      queryClient.invalidateQueries({ queryKey: ["fedipod", "moderation-stats"] }),
       queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] }),
       queryClient.invalidateQueries({ queryKey: ["fedipod", "notifications"] }),
     ]);
@@ -156,38 +149,9 @@ export function ModerationSettings() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  // AI moderation suggestions are generated fresh each call, not persisted —
-  // "accept" reuses the exact same filter/block mutations as the manual
-  // forms above; "dismiss" just hides it from this render.
-  const acceptKeywordSuggestion = useMutation({
-    mutationFn: (suggestion: AiKeywordSuggestion) =>
-      api.fedipod.createFilter({
-        title: suggestion.keyword,
-        action: "warn",
-        keywords: [{ keyword: suggestion.keyword, semantic: false }],
-      }),
-    onSuccess: async (_result, suggestion) => {
-      setDismissed((prev) => new Set(prev).add(`keyword:${suggestion.keyword}`));
-      await refresh();
-      toast.success(`Added "${suggestion.keyword}" as a filter`);
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-  const acceptAccountSuggestion = useMutation({
-    mutationFn: async (suggestion: AiAccountSuggestion) => {
-      const account = await api.fedipod.resolveCommunity(suggestion.acct);
-      return api.fedipod.block(account.id, true);
-    },
-    onSuccess: async (_result, suggestion) => {
-      setDismissed((prev) => new Set(prev).add(`account:${suggestion.acct}`));
-      await refresh();
-      toast.success(`Blocked @${suggestion.acct}`);
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-
   return (
     <div className="flex flex-col gap-5">
+      <ModerationWeeklySummary />
       <section className="flex flex-col gap-2">
         <div className="flex items-center gap-2"><ShieldBan className="size-4" /><Text variant="strong">Blocked accounts</Text></div>
         {blocks.data?.length ? blocks.data.map((account) => (
@@ -300,91 +264,6 @@ export function ModerationSettings() {
           </div>
         ))}
       </section>
-
-      {aiEnabled ? (
-        <section className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Sparkles className="size-4" /><Text variant="strong">AI suggestions</Text>
-            <AiProviderControl status={aiStatus.data} provider={aiProvider} onChange={setAiProvider} />
-          </div>
-          <Text variant="small" color="tertiary">
-            Based on what you already block, mute, and filter — generated fresh each time, not stored.
-          </Text>
-          {suggestions.data?.keywords
-            .filter((item) => !dismissed.has(`keyword:${item.keyword}`))
-            .map((item) => (
-              <div key={`keyword:${item.keyword}`} className="flex items-center gap-3 rounded-control border border-secondary px-3 py-2">
-                <div className="min-w-0 flex-1">
-                  <Text variant="small">Filter keyword: {item.keyword}</Text>
-                  <Text variant="mini" color="tertiary" truncate>{item.reason}</Text>
-                </div>
-                <Button
-                  size="small"
-                  variant="filled"
-                  disabled={acceptKeywordSuggestion.isPending}
-                  onClick={() => acceptKeywordSuggestion.mutate(item)}
-                >
-                  Accept
-                </Button>
-                <Button
-                  size="small"
-                  variant="transparent"
-                  onClick={() => setDismissed((prev) => new Set(prev).add(`keyword:${item.keyword}`))}
-                >
-                  Dismiss
-                </Button>
-              </div>
-            ))}
-          {suggestions.data?.accounts
-            .filter((item) => !dismissed.has(`account:${item.acct}`))
-            .map((item) => (
-              <div key={`account:${item.acct}`} className="flex items-center gap-3 rounded-control border border-secondary px-3 py-2">
-                <div className="min-w-0 flex-1">
-                  <Text variant="small">Block @{item.acct}</Text>
-                  <Text variant="mini" color="tertiary" truncate>{item.reason}</Text>
-                </div>
-                <Button
-                  size="small"
-                  variant="filled"
-                  disabled={acceptAccountSuggestion.isPending}
-                  onClick={() => acceptAccountSuggestion.mutate(item)}
-                >
-                  Accept
-                </Button>
-                <Button
-                  size="small"
-                  variant="transparent"
-                  onClick={() => setDismissed((prev) => new Set(prev).add(`account:${item.acct}`))}
-                >
-                  Dismiss
-                </Button>
-              </div>
-            ))}
-          {suggestions.data?.domains
-            .filter((item) => !dismissed.has(`domain:${item.domain}`))
-            .map((item) => (
-              <div key={`domain:${item.domain}`} className="flex items-center gap-3 rounded-control border border-secondary px-3 py-2">
-                <div className="min-w-0 flex-1">
-                  <Text variant="small">{item.domain}</Text>
-                  <Text variant="mini" color="tertiary" truncate>
-                    {item.reason} — domain blocking isn&apos;t available from this panel yet.
-                  </Text>
-                </div>
-                <Button
-                  size="small"
-                  variant="transparent"
-                  onClick={() => setDismissed((prev) => new Set(prev).add(`domain:${item.domain}`))}
-                >
-                  Dismiss
-                </Button>
-              </div>
-            ))}
-          {suggestions.data
-            && !suggestions.data.keywords.length && !suggestions.data.accounts.length && !suggestions.data.domains.length ? (
-            <Text variant="small" color="tertiary">Nothing to suggest right now.</Text>
-          ) : null}
-        </section>
-      ) : null}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import type {
   AiFilterMatchDocument,
   AiFilterMatchQuery,
   AiModerationSuggestions,
+  ModerationStatsBundle,
   AiProvider,
   AiStatus,
   ProviderCredential,
@@ -174,6 +175,10 @@ export const api = {
       ipc().invoke("fedipod:updateFilter", id, input) as Promise<MastodonFilter>,
     deleteFilter: (id: string) =>
       ipc().invoke("fedipod:deleteFilter", id) as Promise<{ ok: true }>,
+    moderationStats: () =>
+      ipc().invoke("fedipod:moderationStats") as Promise<ModerationStatsBundle>,
+    recordFilterHits: (keys: string[]) =>
+      ipc().invoke("fedipod:recordFilterHits", keys) as Promise<{ ok: true }>,
     capabilities: () => ipc().invoke("fedipod:capabilities") as Promise<FediPodCapabilities>,
     resolveCommunity: (handle: string) =>
       ipc().invoke("fedipod:resolveCommunity", handle) as Promise<MastodonAccount>,
@@ -249,6 +254,8 @@ export const api = {
       ipc().invoke("fedipod:aiDraftCustomFeed", prompt, provider) as Promise<CustomFeedInput>,
     suggestModeration: (provider?: AiProvider) =>
       ipc().invoke("fedipod:aiSuggestModeration", provider) as Promise<AiModerationSuggestions>,
+    summarizeModeration: (provider?: AiProvider) =>
+      ipc().invoke("fedipod:aiSummarizeModeration", provider) as Promise<string>,
     matchFilters: (queries: AiFilterMatchQuery[], documents: AiFilterMatchDocument[], provider?: AiProvider) =>
       ipc().invoke("fedipod:aiMatchFilters", queries, documents, provider) as Promise<AiFilterMatch[]>,
   },

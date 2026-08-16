@@ -356,6 +356,22 @@ export interface AiModerationSuggestions {
   accounts: AiAccountSuggestion[];
 }
 
+/** The Safety page's weekly moderation summary — a mix of live totals
+ * FediPod holds, "new this week" deltas Ailo tracks locally, and content
+ * FediPod refused before delivery because of a block. */
+export interface ModerationStatsBundle {
+  blockedAccounts: number;
+  newBlockedAccounts: number;
+  mutedAccounts: number;
+  newMutedAccounts: number;
+  blockedDomains: number;
+  newBlockedDomains: number;
+  activeFilters: number;
+  activeKeywords: number;
+  filteredPosts: number;
+  intakeBlockedPosts: number;
+}
+
 export interface AiFilterMatchQuery {
   id: string;
   text: string;

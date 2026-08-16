@@ -37,6 +37,7 @@ import type {
   MastodonFilter,
   MastodonFilterResult,
   FilterInput,
+  ModerationStatsBundle,
   MastodonFeaturedTag,
   MastodonNotification,
   MastodonRelationship,
@@ -56,6 +57,7 @@ import {
   requireExactGroup,
 } from "./fedipod-groups.js";
 import { JsonStore } from "./json-store.js";
+import { recordModerationAction, weeklyStats as localWeeklyModerationStats } from "./moderation-stats.js";
 import { mapFeaturedTag, mapTag } from "./fedipod-tags.js";
 import {
   mapCollection,
@@ -730,6 +732,7 @@ class FediPodService {
     await this.authed(`/api/v1/domain_blocks?${new URLSearchParams({ domain })}`, {
       method: active ? "POST" : "DELETE",
     });
+    if (active) await recordModerationAction("domain-block");
   }
 
   async fetchLists(): Promise<MastodonList[]> {
@@ -1055,6 +1058,48 @@ class FediPodService {
     }));
   }
 
+  /* --------------------------- Moderation summary --------------------------- */
+
+  private async intakeModerationStats(days: number): Promise<{ blockedActor: number; blockedDomain: number }> {
+    const raw = await this.authed(`/api/v1/ailo/moderation/intake-stats?days=${days}`);
+    const r = isRecord(raw) ? raw : {};
+    return { blockedActor: num(r.blockedActor), blockedDomain: num(r.blockedDomain) };
+  }
+
+  async moderationStats(days = 7): Promise<ModerationStatsBundle> {
+    const [blocks, mutes, domainBlocks, filters, local, intake] = await Promise.all([
+      this.fetchBlockedAccounts(),
+      this.fetchMutedAccounts(),
+      this.fetchDomainBlocks(),
+      this.fetchFilters(),
+      localWeeklyModerationStats(days),
+      this.intakeModerationStats(days),
+    ]);
+    return {
+      blockedAccounts: blocks.length,
+      newBlockedAccounts: local.newBlocks,
+      mutedAccounts: mutes.length,
+      newMutedAccounts: local.newMutes,
+      blockedDomains: domainBlocks.length,
+      newBlockedDomains: local.newDomainBlocks,
+      activeFilters: filters.length,
+      activeKeywords: filters.reduce((sum, filter) => sum + filter.keywords.length, 0),
+      filteredPosts: local.filteredPosts,
+      intakeBlockedPosts: intake.blockedActor + intake.blockedDomain,
+    };
+  }
+
+  async summarizeModeration(provider?: AiProvider, days = 7): Promise<string> {
+    const stats = await this.moderationStats(days);
+    const raw = await this.authed("/api/v1/ailo/ai/moderation/summarize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, stats }),
+    });
+    const r = isRecord(raw) ? raw : {};
+    return str(r.summary);
+  }
+
   async fetchCapabilities(): Promise<FediPodCapabilities> {
     const raw = await this.authed("/api/v2/instance");
     const config = isRecord(raw) && isRecord(raw.configuration) ? raw.configuration : {};
@@ -1217,17 +1262,21 @@ class FediPodService {
   }
 
   async setBlock(id: string, active: boolean): Promise<MastodonRelationship> {
-    return mapRelationship(await this.authed(
+    const relationship = mapRelationship(await this.authed(
       `/api/v1/accounts/${encodeURIComponent(id)}/${active ? "block" : "unblock"}`,
       { method: "POST" },
     ));
+    if (active) await recordModerationAction("block");
+    return relationship;
   }
 
   async setMute(id: string, active: boolean): Promise<MastodonRelationship> {
-    return mapRelationship(await this.authed(
+    const relationship = mapRelationship(await this.authed(
       `/api/v1/accounts/${encodeURIComponent(id)}/${active ? "mute" : "unmute"}`,
       { method: "POST" },
     ));
+    if (active) await recordModerationAction("mute");
+    return relationship;
   }
 
   /** Fetch a remote image and upload it as a media attachment with alt text. */

@@ -391,6 +391,24 @@ export interface AiModerationSuggestions {
   accounts: AiAccountSuggestion[];
 }
 
+/** The Safety page's weekly moderation summary — a mix of live totals
+ * FediPod holds, "new this week" deltas Ailo tracks locally (block/mute/
+ * domain-block/filter-hit events, see moderation-stats.ts), and content
+ * FediPod refused before delivery because of a block (moderation-stats.ts
+ * has no visibility into that; store.mjs's own event log does). */
+export interface ModerationStatsBundle {
+  blockedAccounts: number;
+  newBlockedAccounts: number;
+  mutedAccounts: number;
+  newMutedAccounts: number;
+  blockedDomains: number;
+  newBlockedDomains: number;
+  activeFilters: number;
+  activeKeywords: number;
+  filteredPosts: number;
+  intakeBlockedPosts: number;
+}
+
 export interface AiFilterMatchQuery {
   id: string;
   text: string;
