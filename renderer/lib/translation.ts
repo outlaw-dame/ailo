@@ -23,6 +23,16 @@ export function canAutoTranslatePost(input: {
 }): boolean {
   return input.textLength > 0
     && input.textLength <= AUTO_TRANSLATE_MAX_CHARACTERS
+    // A LOT of fediverse posts never declare a language at all — plenty of
+    // software posting to ActivityPub just doesn't set it. Auto-translate
+    // used to treat "unknown" the same as "definitely a different
+    // language", which meant untagged posts already in the reader's own
+    // language got auto-translated anyway, since there was nothing to
+    // compare against. Requiring a real, recognized source language makes
+    // "we don't know" the safe default of doing nothing automatically —
+    // the manual Translate button still works on an unknown-language post,
+    // this only gates the *automatic* one.
+    && baseLanguage(input.sourceLanguage) !== null
     && !isSameLanguage(input.sourceLanguage, input.targetLanguage)
     && !input.hasContentWarning
     && !input.sensitive

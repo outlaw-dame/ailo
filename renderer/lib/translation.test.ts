@@ -19,9 +19,20 @@ test("normalizes regional language codes", () => {
   assert.equal(isSameLanguage("en-GB", "en-US"), true);
 });
 
-test("allows a short, simple post in another or unknown language", () => {
+test("allows a short, simple post in a known, different language", () => {
   assert.equal(canAutoTranslatePost(eligible), true);
-  assert.equal(canAutoTranslatePost({ ...eligible, sourceLanguage: null }), true);
+});
+
+// A post with no declared language is common (plenty of ActivityPub
+// software never sets it) and used to auto-translate anyway — "unknown"
+// was treated the same as "definitely different", which meant an
+// untagged post already in the reader's own language got auto-translated
+// too. "We don't know" must not auto-translate; the manual Translate
+// button is unaffected and still works on it.
+test("does not auto-translate a post with no declared language", () => {
+  assert.equal(canAutoTranslatePost({ ...eligible, sourceLanguage: null }), false);
+  assert.equal(canAutoTranslatePost({ ...eligible, sourceLanguage: undefined }), false);
+  assert.equal(canAutoTranslatePost({ ...eligible, sourceLanguage: "" }), false);
 });
 
 test("blocks complex, hidden, sensitive, or same-language posts", () => {
