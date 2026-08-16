@@ -157,6 +157,26 @@ export class SemanticFilterService {
     await this.loadEmbedder();
   }
 
+  async matchPhrases(
+    statuses: MastodonStatus[],
+    phrases: string[],
+    threshold = DEFAULT_THRESHOLD,
+  ): Promise<Set<string>> {
+    const queries = [...new Set(phrases.map((phrase) => semanticQuery(phrase)).filter(Boolean))];
+    if (!statuses.length || !queries.length) return new Set();
+    const documents = new Map(statuses.map((status) => [
+      status.id,
+      semanticChunks(semanticText(status)).map((chunk) => semanticDocument(chunk, status.title)),
+    ]));
+    const vectors = await this.vectors([...queries, ...[...documents.values()].flat()]);
+    const matches = new Set<string>();
+    for (const [id, statusDocuments] of documents) {
+      if (queries.some((query) => statusDocuments.some((document) =>
+        dot(vectors.get(query) ?? [], vectors.get(document) ?? []) >= threshold))) matches.add(id);
+    }
+    return matches;
+  }
+
   private async vectors(texts: string[]): Promise<Map<string, number[]>> {
     const unique = [...new Set(texts.filter(Boolean))];
     const missing = unique.filter((text) => !this.cache.has(text));

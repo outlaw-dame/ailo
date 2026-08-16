@@ -5,12 +5,20 @@ import { normalizeHashtag } from "../services/fedipod-tags.js";
 import { postsStore } from "../services/posts-store.js";
 import type { FediverseContentType, FediverseObjectType, FediverseVisibility } from "../types.js";
 import type { MastodonQuotePolicy } from "../types.js";
-import type { AiFilterMatchDocument, AiFilterMatchQuery, AiProvider, ProviderCredential } from "../types.js";
+import type {
+  AiAssistantMessage, AiFilterMatchDocument, AiFilterMatchQuery, AiProvider, ProviderCredential, TranslationProvider,
+} from "../types.js";
 
 const VISIBILITIES: FediverseVisibility[] = ["public", "unlisted", "private", "direct"];
 const OBJECT_TYPES: FediverseObjectType[] = ["Note", "Article"];
 const CONTENT_TYPES: FediverseContentType[] = ["text/plain", "text/markdown", "text/x.misskeymarkdown"];
 const QUOTE_POLICIES: MastodonQuotePolicy[] = ["public", "followers", "nobody"];
+const MEDIA_TYPES = new Set([
+  "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
+  "video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/x-matroska",
+]);
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
 
 function asVisibility(value: unknown): FediverseVisibility {
   return typeof value === "string" && (VISIBILITIES as string[]).includes(value)
@@ -35,9 +43,32 @@ function asAiProvider(value: unknown): AiProvider | undefined {
   throw new Error("AI provider must be openai or gemini");
 }
 
+function requireAssistantMessages(value: unknown): AiAssistantMessage[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 40) {
+    throw new Error("Assistant chat needs 1–40 messages");
+  }
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object"
+      || (entry as { role?: unknown }).role !== "user" && (entry as { role?: unknown }).role !== "assistant"
+      || typeof (entry as { content?: unknown }).content !== "string"
+      || !(entry as { content: string }).content.trim()
+      || (entry as { content: string }).content.length > 4_000) {
+      throw new Error("Each message needs a user/assistant role and 1–4000 characters of content");
+    }
+    return entry as AiAssistantMessage;
+  });
+}
+
 function asProviderCredential(value: unknown): ProviderCredential {
-  if (value === "openai" || value === "gemini" || value === "safe_browsing") return value;
-  throw new Error("Provider must be openai, gemini, or safe_browsing");
+  if (value === "openai" || value === "gemini" || value === "safe_browsing" || value === "klipy"
+    || value === "deepl" || value === "libretranslate") return value;
+  throw new Error("Unknown provider");
+}
+
+function asTranslationProvider(value: unknown): TranslationProvider | undefined {
+  if (value == null || value === "" || value === "auto") return undefined;
+  if (value === "openai" || value === "gemini" || value === "deepl" || value === "libretranslate") return value;
+  throw new Error("Unknown translation provider");
 }
 
 function requireApiKey(value: unknown): string {
@@ -48,6 +79,16 @@ function requireApiKey(value: unknown): string {
     throw new Error("API key must contain 1–1024 non-whitespace characters");
   }
   return key;
+}
+
+function stringList(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.length > 100 || value.some((item) => typeof item !== "string")) {
+    throw new Error(`${field} must be an array of at most 100 strings`);
+  }
+  return [...new Set(value.map((item) => item.trim()).filter(Boolean))].map((item) => {
+    if (item.length > 200) throw new Error(`${field} entries must be at most 200 characters`);
+    return item;
+  });
 }
 
 function optionalGateToken(value: unknown): string | undefined {
@@ -129,6 +170,15 @@ export function registerFediPodHandlers(): void {
     });
   });
 
+  ipcMain.handle("fedipod:tagTimeline", async (_event, tag: unknown, options: unknown) => {
+    const opts =
+      typeof options === "object" && options !== null ? (options as Record<string, unknown>) : {};
+    return fediPodService.fetchTagTimeline(requireHashtag(tag), {
+      maxId: typeof opts.maxId === "string" ? opts.maxId : undefined,
+      limit: typeof opts.limit === "number" ? opts.limit : undefined,
+    });
+  });
+
   ipcMain.handle("fedipod:notifications", async () => {
     return fediPodService.fetchNotifications();
   });
@@ -145,6 +195,54 @@ export function registerFediPodHandlers(): void {
 
   ipcMain.handle("fedipod:blocks", async () => fediPodService.fetchBlockedAccounts());
   ipcMain.handle("fedipod:mutes", async () => fediPodService.fetchMutedAccounts());
+  ipcMain.handle("fedipod:domainBlocks", async () => fediPodService.fetchDomainBlocks());
+  ipcMain.handle("fedipod:setDomainBlock", async (_event, domain: unknown, active: unknown) => {
+    await fediPodService.setDomainBlock(requireString(domain, "Domain"), active !== false);
+    return { ok: true };
+  });
+  ipcMain.handle("fedipod:lists", async () => fediPodService.fetchLists());
+  ipcMain.handle("fedipod:createList", async (_event, title: unknown) =>
+    fediPodService.createList(requireString(title, "List title")));
+  ipcMain.handle("fedipod:deleteList", async (_event, id: unknown) => {
+    await fediPodService.deleteList(requireString(id, "List id"));
+    return { ok: true };
+  });
+  ipcMain.handle("fedipod:listAccounts", async (_event, id: unknown) =>
+    fediPodService.fetchListAccounts(requireString(id, "List id")));
+  ipcMain.handle("fedipod:listTimeline", async (_event, id: unknown) =>
+    fediPodService.fetchListTimeline(requireString(id, "List id")));
+  ipcMain.handle("fedipod:setListAccount", async (
+    _event, listId: unknown, handle: unknown, active: unknown,
+  ) => {
+    const account = await fediPodService.resolveAccount(requireString(handle, "Account"));
+    await fediPodService.addListAccount(requireString(listId, "List id"), account.id, active !== false);
+    return account;
+  });
+  ipcMain.handle("fedipod:customFeeds", async () => fediPodService.fetchCustomFeeds());
+  ipcMain.handle("fedipod:customFeed", async (_event, id: unknown) =>
+    fediPodService.fetchCustomFeed(requireString(id, "Feed id")));
+  ipcMain.handle("fedipod:saveCustomFeed", async (_event, input: unknown, id: unknown) => {
+    const data = typeof input === "object" && input !== null ? input as Record<string, unknown> : {};
+    return fediPodService.saveCustomFeed({
+      name: requireString(data.name, "Feed name").slice(0, 80),
+      description: typeof data.description === "string" ? data.description.trim().slice(0, 500) : "",
+      avatarUrl: typeof data.avatarUrl === "string" ? data.avatarUrl.trim() || null : null,
+      bannerUrl: typeof data.bannerUrl === "string" ? data.bannerUrl.trim() || null : null,
+      accounts: stringList(data.accounts, "Accounts"),
+      hashtags: stringList(data.hashtags, "Hashtags"),
+      semanticKeywords: stringList(data.semanticKeywords, "Topic phrases"),
+      excludeWords: stringList(data.excludeWords, "Excluded words"),
+      excludeAccounts: stringList(data.excludeAccounts, "Excluded accounts"),
+    }, typeof id === "string" && id ? id : undefined);
+  });
+  ipcMain.handle("fedipod:deleteCustomFeed", async (_event, id: unknown) => {
+    await fediPodService.deleteCustomFeed(requireString(id, "Feed id"));
+    return { ok: true };
+  });
+  ipcMain.handle("fedipod:customFeedTimeline", async (_event, id: unknown) =>
+    fediPodService.fetchCustomFeedTimeline(requireString(id, "Feed id")));
+  ipcMain.handle("fedipod:aiDraftCustomFeed", async (_event, prompt: unknown, provider: unknown) =>
+    fediPodService.aiDraftCustomFeed(requireString(prompt, "Feed description").slice(0, 4_000), asAiProvider(provider)));
   ipcMain.handle("fedipod:filters", async () => fediPodService.fetchFilters());
   ipcMain.handle("fedipod:followedTags", async () => fediPodService.fetchFollowedTags());
   ipcMain.handle("fedipod:featuredTags", async () => fediPodService.fetchFeaturedTags());
@@ -228,8 +326,12 @@ export function registerFediPodHandlers(): void {
   ipcMain.handle("fedipod:post", async (_event, input: unknown) => {
     const data =
       typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+    const mediaIds = Array.isArray(data.mediaIds)
+      ? data.mediaIds.slice(0, 4).map((id) => requireString(id, "Media id")) : [];
+    const status = typeof data.status === "string" ? data.status.trim() : "";
+    if (!status && mediaIds.length === 0) throw new Error("Add text or media before posting");
     return fediPodService.postStatus({
-      status: requireString(data.status, "Status text"),
+      status,
       spoilerText: typeof data.spoilerText === "string" ? data.spoilerText : null,
       visibility: asVisibility(data.visibility),
       inReplyToId: typeof data.inReplyToId === "string" ? data.inReplyToId : null,
@@ -244,7 +346,46 @@ export function registerFediPodHandlers(): void {
       quotedStatusId: typeof data.quotedStatusId === "string" ? data.quotedStatusId : null,
       quoteApprovalPolicy: QUOTE_POLICIES.includes(data.quoteApprovalPolicy as MastodonQuotePolicy)
         ? data.quoteApprovalPolicy as MastodonQuotePolicy : "public",
+      mediaIds,
     });
+  });
+
+  ipcMain.handle("fedipod:uploadMedia", async (_event, input: unknown) => {
+    const data = typeof input === "object" && input !== null ? input as Record<string, unknown> : {};
+    const filename = requireString(data.filename, "Filename");
+    if (filename.length > 255 || filename.includes("/") || filename.includes("\\")
+      || Array.from(filename).some((character) => character.charCodeAt(0) < 0x20 || character.charCodeAt(0) === 0x7f)) {
+      throw new Error("Filename is invalid");
+    }
+    const mimeType = requireString(data.mimeType, "Media type").toLowerCase();
+    if (!MEDIA_TYPES.has(mimeType)) throw new Error("Use a JPEG, PNG, GIF, WebP, AVIF, MP4, WebM, Ogg video, Matroska, or QuickTime file");
+    const bytes = data.data instanceof ArrayBuffer ? new Uint8Array(data.data)
+      : ArrayBuffer.isView(data.data) ? new Uint8Array(data.data.buffer, data.data.byteOffset, data.data.byteLength) : null;
+    const limit = mimeType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+    if (!bytes?.byteLength || bytes.byteLength > limit) {
+      throw new Error(`Media must be between 1 byte and ${limit / 1024 / 1024} MB`);
+    }
+    return fediPodService.uploadMediaFile({ filename, mimeType, data: bytes,
+      description: typeof data.description === "string" ? data.description.slice(0, 1500) : undefined });
+  });
+
+  ipcMain.handle("fedipod:updateMediaDescription", async (_event, id: unknown, description: unknown) => {
+    const value = typeof description === "string" ? description.trim() : "";
+    if (value.length > 1500) throw new Error("Media description must be at most 1500 characters");
+    return fediPodService.updateMediaDescription(requireString(id, "Media id"), value);
+  });
+
+  ipcMain.handle("fedipod:searchGifs", async (_event, query: unknown) => {
+    const value = requireString(query, "GIF search");
+    if ([...value].length > 100) throw new Error("GIF search must contain at most 100 characters");
+    return fediPodService.searchKlipyGifs(value, 20);
+  });
+
+  ipcMain.handle("fedipod:importGif", async (_event, id: unknown, description: unknown) => {
+    const value = requireString(id, "GIF selection");
+    if (value.length > 128) throw new Error("GIF selection is invalid");
+    return fediPodService.importKlipyGif(value,
+      typeof description === "string" ? description.slice(0, 1500) : undefined);
   });
 
   ipcMain.handle("fedipod:favourite", async (_event, id: unknown, active: unknown) => {
@@ -294,12 +435,33 @@ export function registerFediPodHandlers(): void {
     );
   });
 
+  ipcMain.handle("fedipod:translationSettings", async () => fediPodService.translationSettings());
+  ipcMain.handle("fedipod:saveTranslationSettings", async (_event, input: unknown) => {
+    const data = typeof input === "object" && input !== null ? input as Record<string, unknown> : {};
+    const url = requireString(data.libreTranslateUrl, "LibreTranslate URL");
+    if (url.length > 2_048) throw new Error("LibreTranslate URL must be at most 2048 characters");
+    const targetLanguage = requireString(data.targetLanguage, "Target language");
+    if (!/^[A-Za-z]{2,3}(?:-[A-Za-z]{2})?$/.test(targetLanguage)) {
+      throw new Error("Target language must be a valid language code");
+    }
+    return fediPodService.saveTranslationSettings({
+      provider: asTranslationProvider(data.provider) ?? null,
+      libreTranslateUrl: url,
+      autoTranslate: data.autoTranslate === true,
+      targetLanguage,
+    });
+  });
+
   ipcMain.handle("fedipod:aiTranslate", async (_event, text: unknown, targetLang: unknown, provider: unknown) => {
-    return fediPodService.aiTranslate(requireString(text, "Text"), requireString(targetLang, "Target language"), asAiProvider(provider));
+    return fediPodService.aiTranslate(requireString(text, "Text"), requireString(targetLang, "Target language"), asTranslationProvider(provider));
   });
 
   ipcMain.handle("fedipod:aiSuggestHashtags", async (_event, text: unknown, provider: unknown) => {
     return fediPodService.aiSuggestHashtags(requireString(text, "Text"), asAiProvider(provider));
+  });
+
+  ipcMain.handle("fedipod:aiAssistantChat", async (_event, messages: unknown, provider: unknown) => {
+    return fediPodService.aiAssistantChat(requireAssistantMessages(messages), asAiProvider(provider));
   });
 
   ipcMain.handle("fedipod:aiSuggestModeration", async (_event, provider: unknown) => {

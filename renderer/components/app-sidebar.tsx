@@ -1,21 +1,25 @@
 import type * as React from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { AtSign, BookOpen, PenLine, UserRound } from "lucide-react";
+import { AtSign, BookOpen, ListFilter, PenLine, Settings, UserRound } from "lucide-react";
 import { Sidebar, SidebarList, SidebarListItem } from "@glaze/core/components";
 
-type NavId = "feed" | "write" | "fediverse" | "profile";
+type NavId = "feed" | "write" | "feeds" | "fediverse" | "profile" | "settings";
 
 const NAV: Array<{ id: NavId; title: string; path: string; icon: React.ReactNode }> = [
   { id: "feed", title: "Stories", path: "/", icon: <BookOpen /> },
   { id: "write", title: "Compose", path: "/write", icon: <PenLine /> },
+  { id: "feeds", title: "Feeds", path: "/feeds", icon: <ListFilter /> },
   { id: "fediverse", title: "Fediverse", path: "/fediverse", icon: <AtSign /> },
   { id: "profile", title: "You", path: "/profile", icon: <UserRound /> },
+  { id: "settings", title: "Settings", path: "/settings", icon: <Settings /> },
 ];
 
 function activeNav(pathname: string): NavId {
   if (pathname.startsWith("/write")) return "write";
+  if (pathname.startsWith("/feeds")) return "feeds";
   if (pathname.startsWith("/fediverse")) return "fediverse";
   if (pathname.startsWith("/profile")) return "profile";
+  if (pathname.startsWith("/settings")) return "settings";
   return "feed";
 }
 

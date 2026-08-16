@@ -5,6 +5,8 @@ import * as crypto from "node:crypto";
 import { app, logger, safeStorage } from "@glaze/core/backend";
 
 import type {
+  AiAssistantAction,
+  AiAssistantMessage,
   AiFilterMatch,
   AiFilterMatchDocument,
   AiFilterMatchQuery,
@@ -19,6 +21,8 @@ import type {
   FediPodCapabilities,
   FediPodLoginResult,
   FediPodStatus,
+  CustomFeed,
+  CustomFeedInput,
   FediverseVisibility,
   FediverseContentType,
   FediverseObjectType,
@@ -29,6 +33,7 @@ import type {
   MastodonCollectionSourcePreview,
   MastodonCreatorAttribution,
   MastodonMediaAttachment,
+  MastodonList,
   MastodonFilter,
   MastodonFilterResult,
   MastodonFeaturedTag,
@@ -38,8 +43,11 @@ import type {
   MastodonSuggestion,
   MastodonQuotePolicy,
   MastodonTag,
+  KlipyGif,
   Post,
   SafeBrowsingResult,
+  TranslationProvider,
+  TranslationSettings,
 } from "../types.js";
 import { DEFAULT_FEDIPOD_CONFIG } from "../types.js";
 import {
@@ -57,14 +65,22 @@ import {
 } from "./fedipod-modern.js";
 import {
   mapAiStatus,
+  mapAssistantReply,
   mapFilterMatches,
   mapHashtagSuggestions,
   mapModerationSuggestions,
   mapProviderCredentials,
   mapSafeBrowsingResult,
   mapTranslation,
+  mapTranslationSettings,
 } from "./fedipod-ai.js";
 import { mapCreatorAttribution, mapCreatorCard } from "./fedipod-creator.js";
+import { mapMediaAttachment } from "./fedipod-media.js";
+import {
+  AILO_FEDIPOD_API_VERSION,
+  parseFediPodCompatibility,
+} from "./fedipod-compatibility.js";
+import { resolveLocalFediPodBase } from "./fedipod-local-route.js";
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
@@ -123,18 +139,6 @@ export function mapAccount(raw: unknown): MastodonAccount {
   };
 }
 
-function mapMedia(raw: unknown): MastodonMediaAttachment {
-  const r = isRecord(raw) ? raw : {};
-  return {
-    id: str(r.id),
-    type: str(r.type, "unknown"),
-    url: str(r.url) || str(r.remote_url) || str(r.preview_url),
-    previewUrl: str(r.preview_url) || null,
-    description: typeof r.description === "string" ? r.description : null,
-  };
-}
-
-
 function mapFilter(raw: unknown): MastodonFilter {
   const r = isRecord(raw) ? raw : {};
   const action = str(r.filter_action, "warn");
@@ -179,6 +183,23 @@ function mapRelationship(raw: unknown): MastodonRelationship {
   };
 }
 
+function mapList(raw: unknown): MastodonList {
+  const r = isRecord(raw) ? raw : {};
+  return { id: str(r.id), title: str(r.title) };
+}
+
+function mapCustomFeed(raw: unknown): CustomFeed {
+  const r = isRecord(raw) ? raw : {};
+  const strings = (value: unknown) => arr(value).map((item) => str(item)).filter(Boolean);
+  return {
+    id: str(r.id), name: str(r.name), description: str(r.description),
+    avatarUrl: str(r.avatar_url) || null, bannerUrl: str(r.banner_url) || null,
+    accounts: strings(r.accounts), hashtags: strings(r.hashtags),
+    semanticKeywords: strings(r.semantic_keywords), excludeWords: strings(r.exclude_words),
+    excludeAccounts: strings(r.exclude_accounts), createdAt: str(r.created_at), updatedAt: str(r.updated_at),
+  };
+}
+
 export function mapStatus(raw: unknown, depth = 0): MastodonStatus {
   const r = isRecord(raw) ? raw : {};
   const sourceRaw = isRecord(r.source) ? r.source : null;
@@ -200,9 +221,11 @@ export function mapStatus(raw: unknown, depth = 0): MastodonStatus {
       .map(mapFilterResult)
       .filter((value): value is MastodonFilterResult => value !== null),
     spoilerText: str(r.spoiler_text),
+    language: typeof r.language === "string" && r.language.trim() ? r.language.trim() : null,
+    sensitive: bool(r.sensitive),
     visibility: str(r.visibility, "public"),
     account: mapAccount(r.account),
-    mediaAttachments: arr(r.media_attachments).map(mapMedia),
+    mediaAttachments: arr(r.media_attachments).map(mapMediaAttachment),
     card: isRecord(r.card) ? mapCreatorCard(r.card, mapAccount) : null,
     favouritesCount: num(r.favourites_count),
     reblogsCount: num(r.reblogs_count),
@@ -400,7 +423,11 @@ class FediPodService {
       const gateToken = Buffer.concat([
         decipher.update(Buffer.from(payload.ciphertext, "base64")), decipher.final(),
       ]).toString("utf8");
-      if (!gateToken || gateToken.length > 1_024 || /[\x00-\x20\x7f]/.test(gateToken)) throw new Error("invalid token");
+      if (!gateToken || gateToken.length > 1_024
+        || Array.from(gateToken).some((character) =>
+          character.charCodeAt(0) <= 0x20 || character.charCodeAt(0) === 0x7f)) {
+        throw new Error("invalid token");
+      }
       return { status: "paired", gateToken };
     } catch {
       throw new Error("Could not verify FediPod's local pairing response.");
@@ -413,6 +440,14 @@ class FediPodService {
     await this.writeGateToken("");
   }
 
+  private async expireAccessToken(): Promise<void> {
+    const config = await this.config.load();
+    this.cachedToken = null;
+    await fs.rm(await this.resolveTokenPath(), { force: true });
+    await this.config.save({ version: 1, baseUrl: config.baseUrl, account: null });
+    logger.warn("fedipod", "Expired rejected access token; reconnect is required");
+  }
+
   /** Low-level authorized request against the Mastodon client API. */
   private async request(
     baseUrl: string,
@@ -421,18 +456,26 @@ class FediPodService {
     init: FetchInit = {},
     gateToken?: string | null,
   ): Promise<unknown> {
-    const url = `${baseUrl}${apiPath}`;
+    // Ailo and FediPod normally share this machine. Prefer the verified
+    // loopback daemon so local actions do not depend on a Cloudflare tunnel;
+    // fall back to the configured public endpoint when FediPod is remote.
+    const requestBase = await resolveLocalFediPodBase(baseUrl, gateToken);
+    const url = `${requestBase || baseUrl}${apiPath}`;
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${token}`);
+    headers.set("X-Ailo-API-Version", String(AILO_FEDIPOD_API_VERSION));
     if (gateToken) headers.set("x-dk-token", gateToken);
     if (!headers.has("Accept")) headers.set("Accept", "application/json");
     let response: Response;
     try {
-      response = await fetch(url, { ...init, headers });
+      response = await fetch(url, { ...init, headers, redirect: "manual" });
     } catch (error) {
       throw new Error(
-        `Could not reach FediPod at ${baseUrl}. Is it running? (${error instanceof Error ? error.message : String(error)})`,
+        `Could not reach FediPod at ${requestBase || baseUrl}. Is it running? (${error instanceof Error ? error.message : String(error)})`,
       );
+    }
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error("FediPod redirected an authenticated API request. Configure Ailo with the final HTTPS endpoint, then reconnect.");
     }
     if (!response.ok) {
       const text = await response.text().catch(() => "");
@@ -448,7 +491,9 @@ class FediPodService {
         throw new Error("FediPod rejected the tunnel access token.");
       }
       if (response.status === 401 || response.status === 403) {
-        throw new Error("FediPod rejected the access token. Reconnect in the You tab.");
+        const error = new Error("FediPod session expired. Reconnect in the You tab.");
+        error.name = "FediPodAccessTokenError";
+        throw error;
       }
       throw new Error(`FediPod request failed (${response.status})${detail ? `: ${detail}` : ""}`);
     }
@@ -463,7 +508,12 @@ class FediPodService {
     if (!config.baseUrl || !token) {
       throw new Error("FediPod is not connected. Connect it in the You tab.");
     }
-    return this.request(config.baseUrl, token, apiPath, init, gateToken);
+    try {
+      return await this.request(config.baseUrl, token, apiPath, init, gateToken);
+    } catch (error) {
+      if (error instanceof Error && error.name === "FediPodAccessTokenError") await this.expireAccessToken();
+      throw error;
+    }
   }
 
   /* --------------------------------- auth -------------------------------- */
@@ -479,6 +529,9 @@ class FediPodService {
     if (!account.id) {
       throw new Error("FediPod did not return an account for this token.");
     }
+    parseFediPodCompatibility(
+      await this.request(baseUrl, token, "/api/v2/instance", {}, gateToken),
+    );
     await this.writeToken(token);
     await this.writeGateToken(gateToken);
     await this.config.save({ version: 1, baseUrl, account });
@@ -629,6 +682,18 @@ class FediPodService {
     return arr(raw).map((item) => mapStatus(item));
   }
 
+  async fetchTagTimeline(
+    tag: string,
+    options: { maxId?: string; limit?: number } = {},
+  ): Promise<MastodonStatus[]> {
+    const params = new URLSearchParams({ limit: String(options.limit ?? 20) });
+    if (options.maxId) params.set("max_id", options.maxId);
+    const raw = await this.authed(
+      `/api/v1/timelines/tag/${encodeURIComponent(tag)}?${params.toString()}`,
+    );
+    return arr(raw).map((item) => mapStatus(item));
+  }
+
   async fetchNotifications(options: { limit?: number } = {}): Promise<MastodonNotification[]> {
     const params = new URLSearchParams({ limit: String(options.limit ?? 30) });
     const raw = await this.authed(`/api/v1/notifications?${params.toString()}`);
@@ -641,6 +706,86 @@ class FediPodService {
 
   async fetchMutedAccounts(): Promise<MastodonAccount[]> {
     return arr(await this.authed("/api/v1/mutes")).map(mapAccount);
+  }
+
+  async fetchDomainBlocks(): Promise<string[]> {
+    return arr(await this.authed("/api/v1/domain_blocks")).map((item) => str(item)).filter(Boolean);
+  }
+
+  async setDomainBlock(domain: string, active: boolean): Promise<void> {
+    await this.authed(`/api/v1/domain_blocks?${new URLSearchParams({ domain })}`, {
+      method: active ? "POST" : "DELETE",
+    });
+  }
+
+  async fetchLists(): Promise<MastodonList[]> {
+    return arr(await this.authed("/api/v1/lists")).map(mapList).filter((list) => list.id);
+  }
+
+  async createList(title: string): Promise<MastodonList> {
+    return mapList(await this.authed("/api/v1/lists", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }),
+    }));
+  }
+
+  async deleteList(id: string): Promise<void> {
+    await this.authed(`/api/v1/lists/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  async fetchListAccounts(id: string): Promise<MastodonAccount[]> {
+    return arr(await this.authed(`/api/v1/lists/${encodeURIComponent(id)}/accounts`)).map(mapAccount);
+  }
+
+  async fetchListTimeline(id: string): Promise<MastodonStatus[]> {
+    return arr(await this.authed(`/api/v1/timelines/list/${encodeURIComponent(id)}?limit=100`))
+      .map((item) => mapStatus(item));
+  }
+
+  async addListAccount(listId: string, accountId: string, active: boolean): Promise<void> {
+    await this.authed(`/api/v1/lists/${encodeURIComponent(listId)}/accounts`, {
+      method: active ? "POST" : "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_ids: [accountId] }),
+    });
+  }
+
+  async resolveAccount(handleInput: string): Promise<MastodonAccount> {
+    const handle = handleInput.trim().replace(/^@/, "").toLowerCase();
+    const raw = await this.authed(`/api/v1/accounts/search?${new URLSearchParams({ q: handle, limit: "20" })}`);
+    const account = arr(raw).map(mapAccount).find((item) =>
+      (item.acct || item.username).replace(/^@/, "").toLowerCase() === handle);
+    if (!account?.id) throw new Error(`Could not find @${handle}`);
+    return account;
+  }
+
+  async fetchCustomFeeds(): Promise<CustomFeed[]> {
+    return arr(await this.authed("/api/v1/ailo/custom-feeds")).map(mapCustomFeed).filter((feed) => feed.id);
+  }
+
+  async fetchCustomFeed(id: string): Promise<CustomFeed> {
+    return mapCustomFeed(await this.authed(`/api/v1/ailo/custom-feeds/${encodeURIComponent(id)}`));
+  }
+
+  async saveCustomFeed(input: CustomFeedInput, id?: string): Promise<CustomFeed> {
+    return mapCustomFeed(await this.authed(id
+      ? `/api/v1/ailo/custom-feeds/${encodeURIComponent(id)}` : "/api/v1/ailo/custom-feeds", {
+      method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: input.name, description: input.description,
+        avatar_url: input.avatarUrl, banner_url: input.bannerUrl,
+        accounts: input.accounts, hashtags: input.hashtags,
+        semantic_keywords: input.semanticKeywords, exclude_words: input.excludeWords,
+        exclude_accounts: input.excludeAccounts,
+      }),
+    }));
+  }
+
+  async deleteCustomFeed(id: string): Promise<void> {
+    await this.authed(`/api/v1/ailo/custom-feeds/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  async fetchCustomFeedTimeline(id: string): Promise<MastodonStatus[]> {
+    const raw = await this.authed(`/api/v1/ailo/custom-feeds/${encodeURIComponent(id)}/timeline?limit=200`);
+    return arr(raw).map((item) => mapStatus(item));
   }
 
   async fetchFilters(): Promise<MastodonFilter[]> {
@@ -754,7 +899,72 @@ class FediPodService {
     return { ok: true, provider, ...(raw.model ? { model: raw.model } : {}) };
   }
 
-  async aiTranslate(text: string, targetLang: string, provider?: AiProvider): Promise<string> {
+  async translationSettings(): Promise<TranslationSettings> {
+    return mapTranslationSettings(await this.authed("/api/v1/ailo/translation/settings"));
+  }
+
+  async saveTranslationSettings(input: {
+    provider: TranslationProvider | null;
+    libreTranslateUrl: string;
+    autoTranslate: boolean;
+    targetLanguage: string;
+  }): Promise<TranslationSettings> {
+    return mapTranslationSettings(await this.authed("/api/v1/ailo/translation/settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: input.provider,
+        libretranslate_url: input.libreTranslateUrl,
+        auto_translate: input.autoTranslate,
+        target_language: input.targetLanguage,
+      }),
+    }));
+  }
+
+  async searchKlipyGifs(query: string, limit = 20): Promise<KlipyGif[]> {
+    const raw = await this.authed("/api/v1/ailo/gifs/search", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q: query, limit }),
+    });
+    const results = isRecord(raw) ? arr(raw.results) : [];
+    return results.map((value): KlipyGif | null => {
+      const item = isRecord(value) ? value : {};
+      const id = str(item.id);
+      const previewUrl = str(item.preview_url);
+      if (!id || !previewUrl.startsWith("https://")) return null;
+      return { id, title: str(item.title, "GIF"), previewUrl,
+        width: typeof item.width === "number" ? item.width : null,
+        height: typeof item.height === "number" ? item.height : null };
+    }).filter((value): value is KlipyGif => value !== null);
+  }
+
+  async importKlipyGif(id: string, description?: string): Promise<MastodonMediaAttachment> {
+    return mapMediaAttachment(await this.authed("/api/v1/ailo/gifs/import", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, description: description?.trim() || undefined }),
+    }));
+  }
+
+  async uploadMediaFile(input: {
+    filename: string;
+    mimeType: string;
+    data: Uint8Array;
+    description?: string;
+  }): Promise<MastodonMediaAttachment> {
+    const form = new FormData();
+    const bytes = new Uint8Array(input.data);
+    form.append("file", new Blob([bytes], { type: input.mimeType }), input.filename);
+    if (input.description?.trim()) form.append("description", input.description.trim());
+    return mapMediaAttachment(await this.authed("/api/v2/media", { method: "POST", body: form }));
+  }
+
+  async updateMediaDescription(id: string, description: string): Promise<MastodonMediaAttachment> {
+    return mapMediaAttachment(await this.authed(`/api/v1/media/${encodeURIComponent(id)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: description.trim() }),
+    }));
+  }
+
+  async aiTranslate(text: string, targetLang: string, provider?: TranslationProvider): Promise<string> {
     return mapTranslation(await this.authed("/api/v1/ailo/ai/translate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -768,6 +978,35 @@ class FediPodService {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, provider }),
     }));
+  }
+
+  async aiDraftCustomFeed(prompt: string, provider?: AiProvider): Promise<CustomFeedInput> {
+    const draft = mapCustomFeed(await this.authed("/api/v1/ailo/ai/custom-feeds/draft", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, provider }),
+    }));
+    const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...input } = draft;
+    return input;
+  }
+
+  async aiAssistantChat(
+    messages: AiAssistantMessage[],
+    provider?: AiProvider,
+  ): Promise<{ reply: string; provider: AiProvider | null; action: AiAssistantAction | null }> {
+    const raw = await this.authed("/api/v1/ailo/ai/assistant/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages, provider }),
+    });
+    const { reply, provider: usedProvider } = mapAssistantReply(raw);
+    const rawAction = isRecord(raw) && isRecord(raw.action) ? raw.action : null;
+    let action: AiAssistantAction | null = null;
+    if (rawAction && rawAction.type === "custom_feed_draft") {
+      const draft = mapCustomFeed(rawAction.draft);
+      const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...input } = draft;
+      action = { type: "custom_feed_draft", draft: input };
+    }
+    return { reply, provider: usedProvider, action };
   }
 
   async aiSuggestModeration(provider?: AiProvider): Promise<AiModerationSuggestions> {
@@ -812,6 +1051,7 @@ class FediPodService {
       maxTitleCharacters: Math.min(300, Math.max(1, num(statuses.max_title_characters, 300))),
       maxPinnedStatuses: Math.min(20, Math.max(1, num(statuses.max_pinned_statuses, 5))),
       supportsCommunityTargeting: bool(statuses.community_targeting),
+      compatibility: parseFediPodCompatibility(raw),
     };
   }
 

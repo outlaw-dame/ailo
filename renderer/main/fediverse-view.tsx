@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AtSign, Bell, Compass, Hash, Home, RefreshCw, ShieldCheck } from "lucide-react";
+import { AtSign, Bell, Compass, Hash, Home, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 import {
   Button,
   EmptyState,
@@ -18,11 +18,13 @@ import { FediverseModeration } from "../components/fediverse-moderation";
 import { FediverseDiscover } from "../components/fediverse-discover";
 import { FediverseTags } from "../components/fediverse-tags";
 import { api } from "../lib/api";
+import { feedRefreshInterval } from "../lib/feed-refresh";
 import { formatRelativeDate } from "../lib/markdown";
 import { semanticFilterService } from "../lib/semantic-filter-service";
+import { filterCustomFeed } from "../lib/custom-feed-match";
 import type { MastodonStatus } from "../lib/types";
 
-type Tab = "home" | "notifications" | "discover" | "tags" | "moderation";
+type Tab = "for-you" | "home" | "tag-feed" | "notifications" | "discover" | "tags" | "moderation";
 
 const NOTIFICATION_LABEL: Record<string, string> = {
   mention: "mentioned you",
@@ -69,11 +71,25 @@ export function FediverseView() {
     queryFn: () => api.fedipod.status(),
   });
   const connected = Boolean(statusQuery.data?.connected);
+  const aiStatusQuery = useQuery({ queryKey: ["fedipod", "ai-status"], queryFn: api.ai.status, enabled: connected });
 
   const [tab, setTab] = React.useState<Tab>("home");
+  const [selectedTag, setSelectedTag] = React.useState<string | null>(null);
   const [composerOpen, setComposerOpen] = React.useState(false);
   const [replyTo, setReplyTo] = React.useState<MastodonStatus | null>(null);
   const [quoteTarget, setQuoteTarget] = React.useState<MastodonStatus | null>(null);
+
+  const capabilitiesQuery = useQuery({
+    queryKey: ["fedipod", "capabilities"],
+    queryFn: () => api.fedipod.capabilities(),
+    enabled: connected,
+    // Re-prove the running daemon's contract instead of trusting a successful
+    // check forever; this catches an old process or rollback while Ailo stays
+    // open and pauses dependent feeds until compatibility is restored.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: "always",
+  });
+  const fedipodReady = connected && capabilitiesQuery.isSuccess;
 
   const timelineQuery = useQuery({
     queryKey: ["fedipod", "timeline"],
@@ -84,7 +100,23 @@ export function FediverseView() {
       ]);
       return semanticFilterService.apply(statuses, filters, "home");
     },
-    enabled: connected,
+    enabled: fedipodReady && tab === "home",
+    refetchInterval: (query) => feedRefreshInterval(query.state.fetchFailureCount),
+    refetchOnWindowFocus: "always",
+  });
+  const tagTimelineQuery = useQuery({
+    queryKey: ["fedipod", "tag-timeline", selectedTag],
+    queryFn: async () => {
+      if (!selectedTag) return [];
+      const [statuses, filters] = await Promise.all([
+        api.fedipod.tagTimeline(selectedTag),
+        api.fedipod.filters(),
+      ]);
+      return semanticFilterService.apply(statuses, filters, "home");
+    },
+    enabled: fedipodReady && tab === "tag-feed" && Boolean(selectedTag),
+    refetchInterval: (query) => feedRefreshInterval(query.state.fetchFailureCount),
+    refetchOnWindowFocus: "always",
   });
   const notificationsQuery = useQuery({
     queryKey: ["fedipod", "notifications"],
@@ -100,12 +132,25 @@ export function FediverseView() {
       );
       return notifications;
     },
-    enabled: connected,
+    enabled: fedipodReady && tab === "notifications",
+    refetchInterval: (query) => feedRefreshInterval(query.state.fetchFailureCount),
+    refetchOnWindowFocus: "always",
   });
-  const capabilitiesQuery = useQuery({
-    queryKey: ["fedipod", "capabilities"],
-    queryFn: () => api.fedipod.capabilities(),
-    enabled: connected,
+  const forYouQuery = useQuery({
+    queryKey: ["fedipod", "for-you"],
+    queryFn: async () => {
+      const feeds = await api.fedipod.customFeeds();
+      const batches = await Promise.all(feeds.map(async (feed) => {
+        const candidates = await api.fedipod.customFeedTimeline(feed.id);
+        let semantic = new Set<string>();
+        if (feed.semanticKeywords.length) semantic = await semanticFilterService.matchPhrases(candidates, feed.semanticKeywords);
+        return filterCustomFeed(candidates, feed, semantic);
+      }));
+      const unique = new Map(batches.flat().map((status) => [status.id, status]));
+      return [...unique.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    },
+    enabled: fedipodReady && tab === "for-you" && aiStatusQuery.data?.enabled === true,
+    refetchInterval: 60_000, refetchOnWindowFocus: "always",
   });
 
   const refresh = () => {
@@ -113,10 +158,12 @@ export function FediverseView() {
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["fedipod", "blocks"] }),
         queryClient.invalidateQueries({ queryKey: ["fedipod", "mutes"] }),
+        queryClient.invalidateQueries({ queryKey: ["fedipod", "domain-blocks"] }),
         queryClient.invalidateQueries({ queryKey: ["fedipod", "filters"] }),
       ]);
       return;
     }
+    if (tab === "for-you") { void forYouQuery.refetch(); return; }
     if (tab === "tags") {
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["fedipod", "followed-tags"] }),
@@ -132,10 +179,19 @@ export function FediverseView() {
       ]);
       return;
     }
+    if (tab === "tag-feed") {
+      void queryClient.invalidateQueries({ queryKey: ["fedipod", "tag-timeline", selectedTag] });
+      return;
+    }
     void queryClient.invalidateQueries({
       queryKey: ["fedipod", tab === "home" ? "timeline" : "notifications"],
     });
   };
+
+  const openHashtag = React.useCallback((tag: string) => {
+    setSelectedTag(tag);
+    setTab("tag-feed");
+  }, []);
 
   const openCompose = () => {
     setReplyTo(null);
@@ -207,6 +263,7 @@ export function FediverseView() {
 
   const account = statusQuery.data?.account;
   const timeline = timelineQuery.data ?? [];
+  const tagTimeline = tagTimelineQuery.data ?? [];
   const notifications = notificationsQuery.data ?? [];
   const capabilities = capabilitiesQuery.data;
 
@@ -220,10 +277,14 @@ export function FediverseView() {
           <div className="flex items-center gap-1.5">
             <SegmentedControl
               size="small"
-              value={tab}
-              onValueChange={(v) => setTab(v as Tab)}
+              value={tab === "tag-feed" ? "" : tab}
+              onValueChange={(v) => {
+                setSelectedTag(null);
+                setTab(v as Tab);
+              }}
               aria-label="Fediverse tab"
             >
+              {aiStatusQuery.data?.enabled ? <SegmentedControlItem value="for-you"><Sparkles />For You</SegmentedControlItem> : null}
               <SegmentedControlItem value="home">
                 <Home />
                 Home
@@ -253,7 +314,19 @@ export function FediverseView() {
         className="h-full"
       >
         <div className="flex max-w-2xl flex-col gap-5 px-6 py-4">
-          {tab === "home" ? (
+          {capabilitiesQuery.isLoading ? (
+            <FeedSkeleton />
+          ) : capabilitiesQuery.isError ? (
+            <ErrorNote
+              message={(capabilitiesQuery.error as Error).message}
+              onRetry={() => void capabilitiesQuery.refetch()}
+            />
+          ) : tab === "for-you" ? (
+            <div className="flex flex-col gap-3">
+              <div className="rounded-card border border-secondary bg-control-subtle p-3"><Text variant="small-strong">Private personalization</Text><Text variant="small" color="tertiary">Built from your custom-feed rules and matched on this device. Fediverse post text is not sent to {aiStatusQuery.data?.defaultProvider === "gemini" ? "Gemini" : "OpenAI"}.</Text><Button size="small" variant="transparent" className="mt-2" onClick={() => void navigate({ to: "/feeds" })}>Tune feeds</Button></div>
+              {forYouQuery.isLoading ? <FeedSkeleton /> : forYouQuery.isError ? <ErrorNote message={(forYouQuery.error as Error).message} onRetry={() => void forYouQuery.refetch()} /> : forYouQuery.data?.length ? forYouQuery.data.map((status) => <StatusCard key={status.id} status={status} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />) : <Text color="tertiary" className="px-1 py-8 text-center">Create a custom feed to teach For You what belongs here.</Text>}
+            </div>
+          ) : tab === "home" ? (
             timelineQuery.isLoading ? (
               <FeedSkeleton />
             ) : timelineQuery.isError ? (
@@ -265,10 +338,36 @@ export function FediverseView() {
             ) : (
               <div className="flex flex-col gap-3">
                 {timeline.map((s) => (
-                  <StatusCard key={s.id} status={s} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} />
+                  <StatusCard key={s.id} status={s} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />
                 ))}
               </div>
             )
+          ) : tab === "tag-feed" ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2 px-1">
+                <Button size="small" variant="transparent" onClick={() => {
+                  setSelectedTag(null);
+                  setTab("home");
+                }}>
+                  Back
+                </Button>
+                <Hash className="size-4" />
+                <Text variant="strong">#{selectedTag}</Text>
+              </div>
+              {tagTimelineQuery.isLoading ? (
+                <FeedSkeleton />
+              ) : tagTimelineQuery.isError ? (
+                <ErrorNote message={(tagTimelineQuery.error as Error).message} onRetry={refresh} />
+              ) : tagTimeline.length === 0 ? (
+                <Text color="tertiary" className="px-1 py-8 text-center">
+                  No posts for #{selectedTag} have reached this FediPod yet.
+                </Text>
+              ) : (
+                tagTimeline.map((s) => (
+                  <StatusCard key={s.id} status={s} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />
+                ))
+              )}
+            </div>
           ) : tab === "notifications" ? (
             notificationsQuery.isLoading ? (
               <FeedSkeleton />
@@ -301,7 +400,7 @@ export function FediverseView() {
                       </Text>
                     </div>
                     {n.status ? (
-                      <StatusCard status={n.status} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} />
+                      <StatusCard status={n.status} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />
                     ) : null}
                     {n.collection ? (
                       <div className="rounded-card border border-secondary bg-control-subtle px-3 py-2">

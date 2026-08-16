@@ -14,7 +14,7 @@ function status(content: string): MastodonStatus {
   return {
     id: "s1", uri: "s1", url: null, createdAt: "", content,
     objectType: "Note", title: null, contentType: "text/plain", source: null,
-    filtered: [], spoilerText: "", visibility: "public", card: null,
+    filtered: [], spoilerText: "", language: "en", sensitive: false, visibility: "public", card: null,
     account: { id: "a", username: "a", acct: "a", displayName: "a", url: "", avatar: "", note: "", followersCount: 0, followingCount: 0, group: false },
     mediaAttachments: [], favouritesCount: 0, reblogsCount: 0, repliesCount: 0,
     favourited: false, reblogged: false, pinned: false, inReplyToId: null, reblog: null,

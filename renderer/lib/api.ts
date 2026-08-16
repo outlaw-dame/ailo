@@ -1,4 +1,6 @@
 import type {
+  AiAssistantAction,
+  AiAssistantMessage,
   AiFilterMatch,
   AiFilterMatchDocument,
   AiFilterMatchQuery,
@@ -18,6 +20,8 @@ import type {
   GitHubRepoSummary,
   GitHubStatus,
   ImageAltText,
+  CustomFeed,
+  CustomFeedInput,
   MastodonAccount,
   MastodonCollection,
   MastodonCollectionImportResult,
@@ -27,16 +31,21 @@ import type {
   MastodonFilter,
   MastodonFeaturedTag,
   MastodonNotification,
+  MastodonMediaAttachment,
+  MastodonList,
   MastodonRelationship,
   MastodonStatus,
   MastodonSuggestion,
   MastodonQuotePolicy,
   MastodonTag,
+  KlipyGif,
   SafeBrowsingResult,
   Post,
   Profile,
   PublishResults,
   SolidStatus,
+  TranslationProvider,
+  TranslationSettings,
 } from "./types";
 
 const ipc = () => window.glazeAPI.glaze.ipc;
@@ -100,6 +109,8 @@ export const api = {
     disconnect: () => ipc().invoke("fedipod:disconnect") as Promise<{ connected: false }>,
     timeline: (options?: { maxId?: string; limit?: number }) =>
       ipc().invoke("fedipod:timeline", options ?? {}) as Promise<MastodonStatus[]>,
+    tagTimeline: (tag: string, options?: { maxId?: string; limit?: number }) =>
+      ipc().invoke("fedipod:tagTimeline", tag, options ?? {}) as Promise<MastodonStatus[]>,
     notifications: () => ipc().invoke("fedipod:notifications") as Promise<MastodonNotification[]>,
     creatorAttribution: () =>
       ipc().invoke("fedipod:creatorAttribution") as Promise<MastodonCreatorAttribution>,
@@ -107,6 +118,24 @@ export const api = {
       ipc().invoke("fedipod:updateCreatorAttribution", domains) as Promise<MastodonCreatorAttribution>,
     blocks: () => ipc().invoke("fedipod:blocks") as Promise<MastodonAccount[]>,
     mutes: () => ipc().invoke("fedipod:mutes") as Promise<MastodonAccount[]>,
+    domainBlocks: () => ipc().invoke("fedipod:domainBlocks") as Promise<string[]>,
+    setDomainBlock: (domain: string, active: boolean) =>
+      ipc().invoke("fedipod:setDomainBlock", domain, active) as Promise<{ ok: true }>,
+    lists: () => ipc().invoke("fedipod:lists") as Promise<MastodonList[]>,
+    createList: (title: string) => ipc().invoke("fedipod:createList", title) as Promise<MastodonList>,
+    deleteList: (id: string) => ipc().invoke("fedipod:deleteList", id) as Promise<{ ok: true }>,
+    listAccounts: (id: string) => ipc().invoke("fedipod:listAccounts", id) as Promise<MastodonAccount[]>,
+    listTimeline: (id: string) => ipc().invoke("fedipod:listTimeline", id) as Promise<MastodonStatus[]>,
+    setListAccount: (listId: string, handle: string, active: boolean) =>
+      ipc().invoke("fedipod:setListAccount", listId, handle, active) as Promise<MastodonAccount>,
+    customFeeds: () => ipc().invoke("fedipod:customFeeds") as Promise<CustomFeed[]>,
+    customFeed: (id: string) => ipc().invoke("fedipod:customFeed", id) as Promise<CustomFeed>,
+    saveCustomFeed: (input: CustomFeedInput, id?: string) =>
+      ipc().invoke("fedipod:saveCustomFeed", input, id) as Promise<CustomFeed>,
+    deleteCustomFeed: (id: string) =>
+      ipc().invoke("fedipod:deleteCustomFeed", id) as Promise<{ ok: true }>,
+    customFeedTimeline: (id: string) =>
+      ipc().invoke("fedipod:customFeedTimeline", id) as Promise<MastodonStatus[]>,
     filters: () => ipc().invoke("fedipod:filters") as Promise<MastodonFilter[]>,
     followedTags: () => ipc().invoke("fedipod:followedTags") as Promise<MastodonTag[]>,
     featuredTags: () => ipc().invoke("fedipod:featuredTags") as Promise<MastodonFeaturedTag[]>,
@@ -163,7 +192,16 @@ export const api = {
       contentType?: FediverseContentType;
       quotedStatusId?: string | null;
       quoteApprovalPolicy?: MastodonQuotePolicy;
+      mediaIds?: string[];
     }) => ipc().invoke("fedipod:post", input) as Promise<MastodonStatus>,
+    uploadMedia: (input: { filename: string; mimeType: string; data: ArrayBuffer; description?: string }) =>
+      ipc().invoke("fedipod:uploadMedia", input) as Promise<MastodonMediaAttachment>,
+    updateMediaDescription: (id: string, description: string) =>
+      ipc().invoke("fedipod:updateMediaDescription", id, description) as Promise<MastodonMediaAttachment>,
+    searchGifs: (query: string) =>
+      ipc().invoke("fedipod:searchGifs", query) as Promise<KlipyGif[]>,
+    importGif: (id: string, description?: string) =>
+      ipc().invoke("fedipod:importGif", id, description) as Promise<MastodonMediaAttachment>,
     favourite: (id: string, active: boolean) =>
       ipc().invoke("fedipod:favourite", id, active) as Promise<MastodonStatus>,
     boost: (id: string, active: boolean) =>
@@ -180,6 +218,7 @@ export const api = {
   },
   app: {
     openExternal: (url: string) => ipc().invoke("app:openExternal", url) as Promise<{ ok: true }>,
+    openSettings: () => ipc().invoke("window:openSettings") as Promise<void>,
   },
   // Provider-backed features. Keys transit Ailo only when the user submits the
   // password field, then remain in FediPod's owner-only local store. Stored
@@ -194,10 +233,24 @@ export const api = {
       ipc().invoke("fedipod:removeProviderCredential", provider) as Promise<ProviderCredentialState>,
     testCredential: (provider: ProviderCredential, apiKey?: string) =>
       ipc().invoke("fedipod:testProviderCredential", provider, apiKey) as Promise<ProviderCredentialTestResult>,
-    translate: (text: string, targetLang: string, provider?: AiProvider) =>
+    translationSettings: () =>
+      ipc().invoke("fedipod:translationSettings") as Promise<TranslationSettings>,
+    saveTranslationSettings: (input: {
+      provider: TranslationProvider | null;
+      libreTranslateUrl: string;
+      autoTranslate: boolean;
+      targetLanguage: string;
+    }) =>
+      ipc().invoke("fedipod:saveTranslationSettings", input) as Promise<TranslationSettings>,
+    translate: (text: string, targetLang: string, provider?: TranslationProvider) =>
       ipc().invoke("fedipod:aiTranslate", text, targetLang, provider) as Promise<string>,
     suggestHashtags: (text: string, provider?: AiProvider) =>
       ipc().invoke("fedipod:aiSuggestHashtags", text, provider) as Promise<string[]>,
+    assistantChat: (messages: AiAssistantMessage[], provider?: AiProvider) =>
+      ipc().invoke("fedipod:aiAssistantChat", messages, provider) as
+        Promise<{ reply: string; provider: AiProvider | null; action: AiAssistantAction | null }>,
+    draftCustomFeed: (prompt: string, provider?: AiProvider) =>
+      ipc().invoke("fedipod:aiDraftCustomFeed", prompt, provider) as Promise<CustomFeedInput>,
     suggestModeration: (provider?: AiProvider) =>
       ipc().invoke("fedipod:aiSuggestModeration", provider) as Promise<AiModerationSuggestions>,
     matchFilters: (queries: AiFilterMatchQuery[], documents: AiFilterMatchDocument[], provider?: AiProvider) =>

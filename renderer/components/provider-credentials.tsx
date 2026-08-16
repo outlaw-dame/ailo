@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Field, Input, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
+import { actionableError } from "../lib/actionable-error";
 import type { ProviderCredential } from "../lib/types";
 
 const PROVIDERS: Array<{
@@ -29,12 +30,33 @@ const PROVIDERS: Array<{
     description: "Checks a link with Google only after you choose to open it.",
     placeholder: "Paste a Google Safe Browsing API key",
   },
+  {
+    id: "klipy",
+    label: "KLIPY GIFs",
+    description: "Searches KLIPY from FediPod; the key is never exposed to Ailo's renderer.",
+    placeholder: "Paste a KLIPY API key",
+  },
+  {
+    id: "deepl",
+    label: "DeepL Translate",
+    description: "Translates posts with DeepL Free or Pro. Free keys ending in :fx are detected automatically.",
+    placeholder: "Paste a DeepL API authentication key",
+  },
+  {
+    id: "libretranslate",
+    label: "LibreTranslate",
+    description: "Optional for self-hosted servers; required by managed servers that enforce API keys.",
+    placeholder: "Paste a LibreTranslate API key",
+  },
 ];
 
 const EMPTY_KEYS: Record<ProviderCredential, string> = {
   openai: "",
   gemini: "",
   safe_browsing: "",
+  klipy: "",
+  deepl: "",
+  libretranslate: "",
 };
 
 export function ProviderCredentials() {
@@ -49,6 +71,7 @@ export function ProviderCredentials() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["fedipod", "provider-credentials"] }),
       queryClient.invalidateQueries({ queryKey: ["fedipod", "ai", "status"] }),
+      queryClient.invalidateQueries({ queryKey: ["fedipod", "translation-settings"] }),
     ]);
   };
   const save = useMutation({
@@ -59,7 +82,7 @@ export function ProviderCredentials() {
       await refresh();
       toast.success("API key saved securely in FediPod");
     },
-    onError: (error: Error) => toast.error(error.message || "Could not save API key"),
+    onError: (error: Error) => toast.error(actionableError(error, "Could not save API key")),
   });
   const remove = useMutation({
     mutationFn: api.ai.removeCredential,
@@ -67,7 +90,7 @@ export function ProviderCredentials() {
       await refresh();
       toast.success("Saved API key removed");
     },
-    onError: (error: Error) => toast.error(error.message || "Could not remove API key"),
+    onError: (error: Error) => toast.error(actionableError(error, "Could not remove API key")),
   });
   const testCredential = useMutation({
     mutationFn: ({ provider, apiKey }: { provider: ProviderCredential; apiKey?: string }) =>
@@ -75,20 +98,20 @@ export function ProviderCredentials() {
     onSuccess: (result) => toast.success(
       `${PROVIDERS.find((provider) => provider.id === result.provider)?.label || "Provider"} key works`,
     ),
-    onError: (error: Error) => toast.error(error.message || "Credential test failed"),
+    onError: (error: Error) => toast.error(actionableError(error, "Credential test failed")),
   });
 
   return (
     <div className="flex flex-col gap-3 rounded-control border border-secondary px-3 py-3">
-      <div>
-        <Text variant="small-strong">AI provider keys</Text>
+      <div className="flex flex-col gap-1">
+        <Text variant="small-strong">Provider API keys</Text>
         <Text variant="mini" color="tertiary">
           Keys are saved only in this FediPod identity's owner-only local file. They are never
           copied to your Solid Pod, published to the Fediverse, or returned to Ailo after saving.
         </Text>
       </div>
       {credentials.isError ? (
-        <Text variant="mini" color="danger">{(credentials.error as Error).message}</Text>
+        <Text variant="mini" color="danger">{actionableError(credentials.error, "Could not load provider keys")}</Text>
       ) : null}
       {PROVIDERS.map((provider) => {
         const state = credentials.data?.[provider.id];
@@ -151,4 +174,3 @@ export function ProviderCredentials() {
     </div>
   );
 }
-

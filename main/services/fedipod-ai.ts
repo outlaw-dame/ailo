@@ -9,6 +9,8 @@ import type {
   ProviderCredential,
   ProviderCredentialsStatus,
   SafeBrowsingResult,
+  TranslationProvider,
+  TranslationSettings,
 } from "../types.js";
 
 function record(value: unknown): Record<string, unknown> {
@@ -18,7 +20,9 @@ function record(value: unknown): Record<string, unknown> {
 const text = (value: unknown, fallback = "") => (typeof value === "string" ? value : fallback);
 const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
-const CREDENTIAL_PROVIDERS: ProviderCredential[] = ["openai", "gemini", "safe_browsing"];
+const CREDENTIAL_PROVIDERS: ProviderCredential[] = ["openai", "gemini", "safe_browsing", "klipy", "deepl", "libretranslate"];
+const isTranslationProvider = (value: unknown): value is TranslationProvider =>
+  value === "openai" || value === "gemini" || value === "deepl" || value === "libretranslate";
 
 export function mapProviderCredentials(raw: unknown): ProviderCredentialsStatus {
   const source = record(raw);
@@ -44,6 +48,10 @@ export function mapAiStatus(raw: unknown): AiStatus {
     && providers.includes(configuredDefault) ? configuredDefault : providers[0] ?? null;
   const models = record(source.models);
   const safeBrowsing = record(source.safe_browsing);
+  const klipy = record(source.klipy);
+  const translation = record(source.translation);
+  const translationProviders = arr(translation.providers).filter(isTranslationProvider);
+  const translationDefault = translation.default_provider;
   return {
     enabled: source.enabled === true && providers.length > 0,
     providers,
@@ -53,6 +61,22 @@ export function mapAiStatus(raw: unknown): AiStatus {
       ...(providers.includes("gemini") && text(models.gemini) ? { gemini: text(models.gemini) } : {}),
     },
     safeBrowsingEnabled: safeBrowsing.enabled === true,
+    klipyEnabled: klipy.enabled === true,
+    translationProviders,
+    defaultTranslationProvider: isTranslationProvider(translationDefault)
+      && translationProviders.includes(translationDefault) ? translationDefault : translationProviders[0] ?? null,
+  };
+}
+
+export function mapTranslationSettings(raw: unknown): TranslationSettings {
+  const source = record(raw);
+  const configuredProviders = arr(source.configured_providers).filter(isTranslationProvider);
+  return {
+    provider: isTranslationProvider(source.provider) ? source.provider : null,
+    libreTranslateUrl: text(source.libretranslate_url, "https://libretranslate.com"),
+    autoTranslate: source.auto_translate === true,
+    targetLanguage: text(source.target_language, "en"),
+    configuredProviders,
   };
 }
 
@@ -123,4 +147,10 @@ export function mapFilterMatches(raw: unknown): AiFilterMatch[] {
 
 export function mapTranslation(raw: unknown): string {
   return text(record(raw).translated);
+}
+
+export function mapAssistantReply(raw: unknown): { reply: string; provider: AiProvider | null } {
+  const source = record(raw);
+  const provider = source.provider === "openai" || source.provider === "gemini" ? source.provider : null;
+  return { reply: text(source.reply), provider };
 }

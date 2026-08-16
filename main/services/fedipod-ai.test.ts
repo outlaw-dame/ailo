@@ -3,12 +3,14 @@ import test from "node:test";
 
 import {
   mapAiStatus,
+  mapAssistantReply,
   mapFilterMatches,
   mapHashtagSuggestions,
   mapModerationSuggestions,
   mapProviderCredentials,
   mapSafeBrowsingResult,
   mapTranslation,
+  mapTranslationSettings,
 } from "./fedipod-ai.js";
 
 test("maps provider credential state without accepting secret-shaped fields", () => {
@@ -16,10 +18,31 @@ test("maps provider credential state without accepting secret-shaped fields", ()
     openai: { configured: true, source: "local", api_key: "must-not-map" },
     gemini: { configured: true, source: "environment" },
     safe_browsing: { configured: false, source: "local" },
+    klipy: { configured: true, source: "local" },
+    deepl: { configured: true, source: "environment" },
   }), {
     openai: { configured: true, source: "local" },
     gemini: { configured: true, source: "environment" },
     safe_browsing: { configured: false, source: null },
+    klipy: { configured: true, source: "local" },
+    deepl: { configured: true, source: "environment" },
+    libretranslate: { configured: false, source: null },
+  });
+});
+
+test("maps translation settings without accepting unknown providers", () => {
+  assert.deepEqual(mapTranslationSettings({
+    provider: "deepl", libretranslate_url: "https://translate.example",
+    auto_translate: true, target_language: "fr",
+    configured_providers: ["deepl", "libretranslate", "unknown"],
+  }), {
+    provider: "deepl", libreTranslateUrl: "https://translate.example",
+    autoTranslate: true, targetLanguage: "fr",
+    configuredProviders: ["deepl", "libretranslate"],
+  });
+  assert.deepEqual(mapTranslationSettings({ provider: "unknown" }), {
+    provider: null, libreTranslateUrl: "https://libretranslate.com",
+    autoTranslate: false, targetLanguage: "en", configuredProviders: [],
   });
 });
 
@@ -30,18 +53,25 @@ test("maps configured AI providers and Safe Browsing capability", () => {
     default_provider: "gemini",
     models: { gemini: "gemini-3.6-flash", openai: "gpt-4.1-mini" },
     safe_browsing: { enabled: true },
+    klipy: { enabled: true },
+    translation: { enabled: true, providers: ["deepl", "libretranslate"], default_provider: "deepl" },
   }), {
     enabled: true,
     providers: ["gemini", "openai"],
     defaultProvider: "gemini",
     models: { gemini: "gemini-3.6-flash", openai: "gpt-4.1-mini" },
     safeBrowsingEnabled: true,
+    klipyEnabled: true,
+    translationProviders: ["deepl", "libretranslate"],
+    defaultTranslationProvider: "deepl",
   });
   assert.deepEqual(mapAiStatus({ enabled: true }), {
-    enabled: true, providers: ["openai"], defaultProvider: "openai", models: {}, safeBrowsingEnabled: false,
+    enabled: true, providers: ["openai"], defaultProvider: "openai", models: {}, safeBrowsingEnabled: false, klipyEnabled: false,
+    translationProviders: [], defaultTranslationProvider: null,
   });
   assert.deepEqual(mapAiStatus(null), {
-    enabled: false, providers: [], defaultProvider: null, models: {}, safeBrowsingEnabled: false,
+    enabled: false, providers: [], defaultProvider: null, models: {}, safeBrowsingEnabled: false, klipyEnabled: false,
+    translationProviders: [], defaultTranslationProvider: null,
   });
 });
 
@@ -92,4 +122,12 @@ test("maps filter matches, dropping entries missing an id", () => {
 test("maps a translation, defaulting to an empty string", () => {
   assert.equal(mapTranslation({ translated: "hola" }), "hola");
   assert.equal(mapTranslation({}), "");
+});
+
+test("maps an assistant reply, rejecting an unrecognized provider", () => {
+  assert.deepEqual(mapAssistantReply({ reply: "hi there", provider: "gemini" }), {
+    reply: "hi there", provider: "gemini",
+  });
+  assert.deepEqual(mapAssistantReply({ reply: "hi", provider: "claude" }), { reply: "hi", provider: null });
+  assert.deepEqual(mapAssistantReply({}), { reply: "", provider: null });
 });

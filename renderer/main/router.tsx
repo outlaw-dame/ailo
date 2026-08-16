@@ -10,9 +10,12 @@ import { ErrorBoundaryView } from "@glaze/core/components";
 import { EditorView } from "./editor-view";
 import { FeedView } from "./feed-view";
 import { FediverseView } from "./fediverse-view";
+import { FeedsView } from "./feeds-view";
+import { FeedDetailView } from "./feed-detail-view";
 import { PostDetailView } from "./post-detail-view";
 import { ProfileView } from "./profile-view";
 import { RootView } from "./root-view";
+import { SettingsView } from "../settings/settings-view";
 
 const rootRoute = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -71,13 +74,37 @@ const fediverseRoute = createRoute({
   staticData: { title: "Fediverse" },
 });
 
+const feedsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/feeds",
+  component: FeedsView,
+  staticData: { title: "Feeds" },
+});
+
+const feedDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/feeds/$feedId",
+  component: FeedDetailView,
+  staticData: { title: "Feed" },
+});
+
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: () => <SettingsView embedded />,
+  staticData: { title: "Settings" },
+});
+
 const routeTree = rootRoute.addChildren([
   feedRoute,
   writeRoute,
   editRoute,
   postRoute,
   fediverseRoute,
+  feedsRoute,
+  feedDetailRoute,
   profileRoute,
+  settingsRoute,
 ]);
 
 const queryClient = new QueryClient({

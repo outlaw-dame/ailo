@@ -19,20 +19,26 @@ import { Badge, Button, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
 import { moderationFor } from "../lib/fediverse-moderation";
+import { hashtagFromLink } from "../lib/hashtag-links";
 import { formatRelativeDate, renderFediverseContent } from "../lib/markdown";
 import type { MastodonStatus, SafeBrowsingResult } from "../lib/types";
-import { useAiProvider } from "./ai-provider-control";
+import { MediaCarousel } from "./media-carousel";
+import { supportedMediaKind } from "../lib/media-attachments";
+import { canAutoTranslatePost, languageName } from "../lib/translation";
+import { actionableError } from "../lib/actionable-error";
 
 export function StatusCard({
   status,
   onReply,
   onQuote,
   ownAccountId,
+  onHashtag,
 }: {
   status: MastodonStatus;
   onReply?: (status: MastodonStatus) => void;
   onQuote?: (status: MastodonStatus) => void;
   ownAccountId?: string | null;
+  onHashtag?: (tag: string) => void;
 }) {
   const queryClient = useQueryClient();
   const booster = status.reblog ? status.account : null;
@@ -97,7 +103,6 @@ export function StatusCard({
   });
 
   const aiStatus = useQuery({ queryKey: ["fedipod", "ai", "status"], queryFn: api.ai.status });
-  const [aiProvider] = useAiProvider(aiStatus.data);
   const [unsafeLink, setUnsafeLink] = React.useState<{
     url: string;
     result: SafeBrowsingResult;
@@ -118,15 +123,56 @@ export function StatusCard({
     }
     await api.app.openExternal(url);
   }, [aiStatus.data?.safeBrowsingEnabled]);
-  const [translated, setTranslated] = React.useState<string | null>(null);
-  const targetLang = typeof navigator !== "undefined" ? navigator.language.split("-")[0] : "en";
-  const translate = useMutation({
-    mutationFn: () => api.ai.translate(s.content, targetLang, aiProvider ?? undefined),
-    onSuccess: setTranslated,
-    onError: (e: Error) => toast.error(e.message || "Could not translate"),
+  const handleContentClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target instanceof Element ? event.target.closest("a") : null;
+    if (!(target instanceof HTMLAnchorElement)) return;
+    const tag = hashtagFromLink({
+      href: target.getAttribute("href"),
+      dataHashtag: target.dataset.ailoHashtag,
+    });
+    if (tag && onHashtag) {
+      event.preventDefault();
+      event.stopPropagation();
+      onHashtag(tag);
+    }
+  }, [onHashtag]);
+  const translationSettings = useQuery({
+    queryKey: ["fedipod", "translation-settings"],
+    queryFn: api.ai.translationSettings,
+    enabled: Boolean(aiStatus.data?.translationProviders.length),
+  });
+  const plainContent = React.useMemo(() => {
+    const document = new DOMParser().parseFromString(s.content, "text/html");
+    return (document.body.textContent || s.content).trim();
+  }, [s.content]);
+  const [manualTranslation, setManualTranslation] = React.useState(false);
+  const [autoTranslationDismissed, setAutoTranslationDismissed] = React.useState(false);
+  const targetLang = translationSettings.data?.targetLanguage ?? "en";
+  const autoTranslation = Boolean(translationSettings.data?.autoTranslate) && canAutoTranslatePost({
+    textLength: plainContent.length,
+    sourceLanguage: s.language,
+    targetLanguage: targetLang,
+    hasContentWarning: Boolean(s.spoilerText),
+    sensitive: s.sensitive,
+    hasMedia: s.mediaAttachments.length > 0,
+    hasCard: Boolean(s.card),
+    isArticle: s.objectType === "Article",
+    hasFilterWarning: filterWarnings.length > 0,
+  });
+  const translationVisible = manualTranslation || (autoTranslation && !autoTranslationDismissed);
+  const translation = useQuery({
+    queryKey: ["fedipod", "translation", s.id, targetLang, translationSettings.data?.provider ?? "auto"],
+    queryFn: () => api.ai.translate(
+      plainContent,
+      targetLang,
+      translationSettings.data?.provider ?? aiStatus.data?.defaultTranslationProvider ?? undefined,
+    ),
+    enabled: translationVisible && revealed && filterRevealed && !hiddenByFilter && Boolean(plainContent),
+    staleTime: Infinity,
+    retry: 1,
   });
 
-  const images = s.mediaAttachments.filter((m) => m.type === "image" || m.type === "gifv");
+  const media = s.mediaAttachments.filter((attachment) => supportedMediaKind(attachment.type));
 
   if (hiddenByFilter) return null;
 
@@ -246,22 +292,10 @@ export function StatusCard({
           <div
             className="mfm-content text-primary text-regular leading-relaxed break-words [&_a]:underline [&_a]:decoration-tertiary [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
             dangerouslySetInnerHTML={{ __html: renderFediverseContent(s) }}
+            onClick={handleContentClick}
           />
-          {images.length > 0 ? (
-            <div className={`grid gap-2 ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-              {images.map((m) => (
-                <img
-                  key={m.id}
-                  src={m.previewUrl ?? m.url}
-                  alt={m.description ?? ""}
-                  title={m.description ?? undefined}
-                  className="w-full max-h-72 rounded-control border border-secondary object-cover"
-                  loading="lazy"
-                />
-              ))}
-            </div>
-          ) : null}
-          {images.length === 0 && s.card && s.card.url ? (
+          <MediaCarousel attachments={media} onOpenExternal={(url) => void openExternalChecked(url)} />
+          {media.length === 0 && s.card && s.card.url ? (
             <div
               role="button"
               tabIndex={0}
@@ -334,10 +368,21 @@ export function StatusCard({
               </div>
             </div>
           ) : null}
-          {translated ? (
-            <div className="flex flex-col gap-1 rounded-control border border-dashed border-secondary px-3 py-2">
-              <Text variant="mini" color="tertiary">Translated ({targetLang})</Text>
-              <Text variant="small" className="whitespace-pre-wrap">{translated}</Text>
+          {translationVisible ? (
+            <div className="flex flex-col gap-1 rounded-control border border-dashed border-secondary px-3 py-2" aria-live="polite">
+              <Text variant="mini" color="tertiary">
+                {autoTranslation && !manualTranslation ? "Auto-translated" : "Translated"}
+                {languageName(s.language) ? ` from ${languageName(s.language)}` : ""}
+                {` to ${languageName(targetLang) ?? targetLang}`}
+              </Text>
+              {translation.isPending ? <Text variant="small" color="tertiary">Translating…</Text> : null}
+              {translation.data ? <Text variant="small" className="whitespace-pre-wrap" lang={targetLang} dir="auto">
+                {translation.data}
+              </Text> : null}
+              {translation.isError ? <div className="flex items-center gap-2">
+                <Text variant="small" color="danger">{actionableError(translation.error, "Failed to translate")}</Text>
+                <Button size="small" variant="transparent" onClick={() => void translation.refetch()}>Retry</Button>
+              </div> : null}
             </div>
           ) : null}
           {s.quote ? (
@@ -349,6 +394,7 @@ export function StatusCard({
                 <div
                   className="text-sm leading-relaxed break-words [&_a]:underline"
                   dangerouslySetInnerHTML={{ __html: renderFediverseContent(s.quote.quotedStatus) }}
+                  onClick={handleContentClick}
                 />
               </div>
             ) : (
@@ -398,16 +444,24 @@ export function StatusCard({
           <Heart />
           <span className="tabular-nums">{s.favouritesCount || ""}</span>
         </Button>
-        {aiStatus.data?.enabled ? (
+        {aiStatus.data?.translationProviders.length ? (
           <Button
             size="small"
             variant="transparent"
-            className={translated ? "text-primary" : undefined}
-            disabled={translate.isPending}
-            onClick={() => (translated ? setTranslated(null) : translate.mutate())}
+            className={translationVisible ? "text-primary" : undefined}
+            disabled={translationSettings.isPending}
+            onClick={() => {
+              if (translationVisible) {
+                setManualTranslation(false);
+                setAutoTranslationDismissed(true);
+              } else {
+                setAutoTranslationDismissed(false);
+                setManualTranslation(true);
+              }
+            }}
           >
             <Languages />
-            {translated ? "Original" : "Translate"}
+            {translationVisible ? "Hide translation" : "Translate"}
           </Button>
         ) : null}
         {!isOwn ? <Button

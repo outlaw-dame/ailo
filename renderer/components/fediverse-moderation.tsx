@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ListFilter, Sparkles, ShieldBan, Trash2, VolumeX } from "lucide-react";
+import { Globe2, ListFilter, Sparkles, ShieldBan, Trash2, VolumeX } from "lucide-react";
 import {
   Badge,
   Button,
@@ -49,9 +49,11 @@ export function FediverseModeration() {
   const [semanticThreshold, setSemanticThreshold] = React.useState("0.60");
   const [semanticBackend, setSemanticBackend] = React.useState(SEMANTIC_MODEL_LOCAL);
   const [dismissed, setDismissed] = React.useState<Set<string>>(new Set());
+  const [domain, setDomain] = React.useState("");
 
   const blocks = useQuery({ queryKey: ["fedipod", "blocks"], queryFn: api.fedipod.blocks });
   const mutes = useQuery({ queryKey: ["fedipod", "mutes"], queryFn: api.fedipod.mutes });
+  const domainBlocks = useQuery({ queryKey: ["fedipod", "domain-blocks"], queryFn: api.fedipod.domainBlocks });
   const filters = useQuery({ queryKey: ["fedipod", "filters"], queryFn: api.fedipod.filters });
   const aiStatus = useQuery({ queryKey: ["fedipod", "ai", "status"], queryFn: api.ai.status });
   const aiEnabled = aiStatus.data?.enabled ?? false;
@@ -66,6 +68,7 @@ export function FediverseModeration() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["fedipod", "blocks"] }),
       queryClient.invalidateQueries({ queryKey: ["fedipod", "mutes"] }),
+      queryClient.invalidateQueries({ queryKey: ["fedipod", "domain-blocks"] }),
       queryClient.invalidateQueries({ queryKey: ["fedipod", "filters"] }),
       queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] }),
       queryClient.invalidateQueries({ queryKey: ["fedipod", "notifications"] }),
@@ -80,6 +83,16 @@ export function FediverseModeration() {
   const unmute = useMutation({
     mutationFn: (id: string) => api.fedipod.mute(id, false),
     onSuccess: refresh,
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const setDomainBlock = useMutation({
+    mutationFn: ({ value, active }: { value: string; active: boolean }) =>
+      api.fedipod.setDomainBlock(value, active),
+    onSuccess: async (_result, variables) => {
+      if (variables.active) setDomain("");
+      await refresh();
+      toast.success(variables.active ? "Domain blocked" : "Domain unblocked");
+    },
     onError: (error: Error) => toast.error(error.message),
   });
   const createFilter = useMutation({
@@ -150,6 +163,21 @@ export function FediverseModeration() {
         {blocks.data?.length ? blocks.data.map((account) => (
           <AccountRow key={account.id} account={account} pending={unblock.isPending} action={() => unblock.mutate(account.id)} />
         )) : <Text variant="small" color="tertiary">No blocked accounts.</Text>}
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <div className="flex items-center gap-2"><Globe2 className="size-4" /><Text variant="strong">Blocked domains</Text></div>
+        <Text variant="small" color="tertiary">Hide posts from a domain and all of its subdomains across home, hashtag, list, and custom feeds.</Text>
+        <div className="flex gap-2">
+          <Input value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="example.social" aria-label="Domain to block" maxLength={253} />
+          <Button size="small" variant="filled" disabled={!domain.trim() || setDomainBlock.isPending} onClick={() => setDomainBlock.mutate({ value: domain, active: true })}>Block domain</Button>
+        </div>
+        {domainBlocks.data?.length ? domainBlocks.data.map((value) => (
+          <div key={value} className="flex items-center gap-3 rounded-control border border-secondary px-3 py-2">
+            <Text variant="small" className="min-w-0 flex-1" truncate>{value}</Text>
+            <Button size="small" variant="transparent" disabled={setDomainBlock.isPending} onClick={() => setDomainBlock.mutate({ value, active: false })}>Remove</Button>
+          </div>
+        )) : <Text variant="small" color="tertiary">No blocked domains.</Text>}
       </section>
 
       <section className="flex flex-col gap-2">

@@ -19,7 +19,6 @@ import {
 } from "@glaze/core/components";
 
 import { api } from "../lib/api";
-import { ProviderCredentials } from "../components/provider-credentials";
 
 function normalizeCalPath(input: string): string {
   const trimmed = input.trim();
@@ -35,7 +34,7 @@ function normalizeCalPath(input: string): string {
   return trimmed.replace(/^\//, "").replace(/\/$/, "");
 }
 
-export function ProfileView() {
+export function ProfileView({ settingsOnly = false }: { settingsOnly?: boolean } = {}) {
   const queryClient = useQueryClient();
 
   const profileQuery = useQuery({
@@ -45,24 +44,27 @@ export function ProfileView() {
   const githubQuery = useQuery({
     queryKey: ["github", "status"],
     queryFn: () => api.github.status(),
+    enabled: settingsOnly,
   });
   const solidQuery = useQuery({
     queryKey: ["solid", "status"],
     queryFn: () => api.solid.status(),
+    enabled: settingsOnly,
   });
   const fediQuery = useQuery({
     queryKey: ["fedipod", "status"],
     queryFn: () => api.fedipod.status(),
+    enabled: settingsOnly,
   });
   const creatorQuery = useQuery({
     queryKey: ["fedipod", "creator-attribution"],
     queryFn: api.fedipod.creatorAttribution,
-    enabled: Boolean(fediQuery.data?.connected),
+    enabled: settingsOnly && Boolean(fediQuery.data?.connected),
   });
   const reposQuery = useQuery({
     queryKey: ["github", "repos"],
     queryFn: () => api.github.listRepos(),
-    enabled: Boolean(githubQuery.data?.connected),
+    enabled: settingsOnly && Boolean(githubQuery.data?.connected),
   });
 
   const [displayName, setDisplayName] = React.useState("");
@@ -253,11 +255,11 @@ export function ProfileView() {
   const solid = solidQuery.data;
   const fedi = fediQuery.data;
 
-  return (
-    <ScrollArea title="You" subtitle="Identity, destinations, and booking" className="h-full">
-      <div className="px-8 py-6 max-w-3xl flex flex-col gap-8 pb-16">
+  const content = (
+      <div className={settingsOnly ? "flex max-w-3xl flex-col gap-8" : "px-8 py-6 max-w-3xl flex flex-col gap-8 pb-16"}>
+        {!settingsOnly ? (
         <section className="flex flex-col gap-3">
-          <div>
+          <div className="flex flex-col gap-1">
             <Text variant="heading2">Masthead</Text>
             <Text color="secondary" className="mt-1">
               The quiet byline behind the knowledge you share.
@@ -291,7 +293,9 @@ export function ProfileView() {
             </Button>
           </div>
         </section>
+        ) : null}
 
+        {settingsOnly ? (
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <Globe2 className="size-4 text-secondary shrink-0" />
@@ -360,7 +364,9 @@ export function ProfileView() {
             )}
           </div>
         </section>
+        ) : null}
 
+        {settingsOnly ? (
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <AtSign className="size-4 text-secondary shrink-0" />
@@ -474,7 +480,6 @@ export function ProfileView() {
                   </Button>
                 </div>
               </div>
-              <ProviderCredentials />
             </div>
           ) : (
             <>
@@ -560,7 +565,9 @@ export function ProfileView() {
             </>
           )}
         </section>
+        ) : null}
 
+        {settingsOnly ? (
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <Github className="size-4 text-secondary shrink-0" />
@@ -665,7 +672,9 @@ export function ProfileView() {
             </Button>
           )}
         </section>
+        ) : null}
 
+        {!settingsOnly ? (
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <CalendarDays className="size-4 text-secondary shrink-0" />
@@ -721,7 +730,18 @@ export function ProfileView() {
             </div>
           )}
         </section>
+        ) : null}
       </div>
+  );
+
+  if (settingsOnly) return content;
+  return (
+    <ScrollArea title="You" subtitle="Your profile and public booking details" className="h-full">
+      {content}
     </ScrollArea>
   );
+}
+
+export function AccountSettings() {
+  return <ProfileView settingsOnly />;
 }

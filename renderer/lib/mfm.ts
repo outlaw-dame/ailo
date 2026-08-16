@@ -52,7 +52,7 @@ function renderNode(node: MfmNode): string {
     case "mention":
       return `<span class="mfm-mention">@${escape(node.props.acct)}</span>`;
     case "hashtag":
-      return `<span class="mfm-hashtag">#${escape(node.props.hashtag)}</span>`;
+      return `<a class="mfm-hashtag" href="#tag/${encodeURIComponent(node.props.hashtag)}" data-ailo-hashtag="${escape(node.props.hashtag)}">#${escape(node.props.hashtag)}</a>`;
     case "url": {
       const url = safeUrl(node.props.url);
       return url ? `<a href="${escape(url)}" rel="nofollow noopener noreferrer">${escape(node.props.url)}</a>` : escape(node.props.url);

@@ -19,3 +19,9 @@ test("escapes markup and refuses active URL schemes", () => {
 test("unknown effects degrade to their readable children", () => {
   assert.equal(renderMfm("$[unknown readable]"), "readable");
 });
+
+test("renders hashtags as Ailo-routable links", () => {
+  const html = renderMfm("#FediVerse");
+  assert.match(html, /data-ailo-hashtag="FediVerse"/);
+  assert.match(html, />#FediVerse<\/a>/);
+});

@@ -1,6 +1,8 @@
 import * as React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { PenLine, Quote as QuoteIcon, Send, Sparkles, Users, X } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Film, ImagePlus, PenLine, Quote as QuoteIcon, Search, Send, Sparkles, Users, WandSparkles, X,
+} from "lucide-react";
 import {
   Button,
   Dialog,
@@ -23,20 +25,29 @@ import { cn } from "@glaze/core/utils";
 
 import { api } from "../lib/api";
 import type {
+  AiAssistantAction,
+  CustomFeedInput,
   FediPodCapabilities,
   FediverseContentType,
   FediverseObjectType,
   FediverseVisibility,
   MastodonQuotePolicy,
+  MastodonMediaAttachment,
   MastodonStatus,
+  KlipyGif,
 } from "../lib/types";
+import { MEDIA_UPLOAD_LIMITS, mediaMimeType, SUPPORTED_UPLOAD_MEDIA_TYPES } from "../lib/media-attachments";
 
 type ComposerMode = "compose" | "assistant";
+type ComposerMedia =
+  | { key: string; kind: "uploaded"; attachment: MastodonMediaAttachment; description: string }
+  | { key: string; kind: "local"; file: File; mimeType: string; previewUrl: string; description: string };
 
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  action?: AiAssistantAction;
 }
 
 const BLOCKED_MESSAGE: Record<string, string> = {
@@ -49,20 +60,48 @@ const BLOCKED_MESSAGE: Record<string, string> = {
   disabled: "AI is currently unavailable for this account.",
 };
 
+const ASSISTANT_SYSTEM_PROMPT =
+  "You are a warm, concise writing assistant helping the user draft short posts (roughly 500 characters) to share on the Fediverse. Offer a couple of concrete phrasing options when it helps, and keep the tone conversational otherwise.";
+
 /**
- * Glaze-hosted chat (Claude/Gemini, billed through Glaze) for open-ended
- * conversational drafting help. Deliberately separate from the OpenAI-via-
- * FediPod features elsewhere (hashtag/moderation suggestions, translate,
- * semantic filter matching) — those are narrow, structured, and run against
- * your Fediverse data server-side; this is free-form brainstorming and
- * doesn't need either.
+ * Chat for open-ended conversational drafting help. Uses your configured
+ * FediPod provider key (OpenAI/Gemini) when one exists — the same key the
+ * rest of the AI features already run on — so a configured key is what
+ * actually gets used rather than a Glaze-subscription default the user never
+ * asked to draw on. Falls back to Glaze's own hosted chat only when no
+ * provider is configured, so the assistant still works out of the box.
  */
-export function AssistantPanel({ onUseInComposer }: { onUseInComposer: (content: string) => void }) {
+export function AssistantPanel({
+  onUseInComposer,
+  providerConfigured,
+}: {
+  onUseInComposer: (content: string) => void;
+  providerConfigured: boolean;
+}) {
   const { streamText, state, enableInHost } = useGlazeAI();
+  const queryClient = useQueryClient();
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [input, setInput] = React.useState("");
+  const [providerLoading, setProviderLoading] = React.useState(false);
+  const [savingFeedId, setSavingFeedId] = React.useState<string | null>(null);
+  const [savedFeedIds, setSavedFeedIds] = React.useState<Set<string>>(new Set());
   const abortControllerRef = React.useRef<AbortController | null>(null);
   const bottomRef = React.useRef<HTMLDivElement>(null);
+  const loading = providerConfigured ? providerLoading : state === "loading";
+
+  const handleSaveFeedDraft = async (messageId: string, draft: CustomFeedInput) => {
+    setSavingFeedId(messageId);
+    try {
+      await api.fedipod.saveCustomFeed(draft);
+      setSavedFeedIds((prev) => new Set(prev).add(messageId));
+      await queryClient.invalidateQueries({ queryKey: ["fedipod", "custom-feeds"] });
+      toast.success(`Saved "${draft.name}" — find it under Custom feeds`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save the feed");
+    } finally {
+      setSavingFeedId(null);
+    }
+  };
 
   React.useEffect(() => () => abortControllerRef.current?.abort(), []);
   React.useEffect(() => {
@@ -71,11 +110,7 @@ export function AssistantPanel({ onUseInComposer }: { onUseInComposer: (content:
 
   const handleSend = async () => {
     const trimmed = input.trim();
-    if (!trimmed || state === "loading") return;
-
-    abortControllerRef.current?.abort();
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
+    if (!trimmed || loading) return;
 
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: trimmed };
     const assistantId = crypto.randomUUID();
@@ -87,11 +122,32 @@ export function AssistantPanel({ onUseInComposer }: { onUseInComposer: (content:
     ]);
     setInput("");
 
+    if (providerConfigured) {
+      setProviderLoading(true);
+      try {
+        const { reply, action } = await api.ai.assistantChat(
+          history.map((m) => ({ role: m.role, content: m.content })),
+        );
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, content: reply, action: action ?? undefined } : m)),
+        );
+      } catch (error) {
+        const message = error instanceof Error && error.message ? error.message : "Something went wrong. Try again.";
+        setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: message } : m)));
+      } finally {
+        setProviderLoading(false);
+      }
+      return;
+    }
+
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       await streamText({
         model: "fast",
-        system:
-          "You are a warm, concise writing assistant helping the user draft short posts (roughly 500 characters) to share on the Fediverse. Offer a couple of concrete phrasing options when it helps, and keep the tone conversational otherwise.",
+        system: ASSISTANT_SYSTEM_PROMPT,
         messages: history.map((m) => ({ role: m.role, content: m.content })),
         maxOutputTokens: 500,
         abortSignal: controller.signal,
@@ -153,6 +209,34 @@ export function AssistantPanel({ onUseInComposer }: { onUseInComposer: (content:
                     Use in composer
                   </Button>
                 ) : null}
+                {m.action?.type === "custom_feed_draft" ? (
+                  <div className="w-full rounded-card border border-secondary bg-well/60 p-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <WandSparkles className="size-3.5 shrink-0" />
+                      <Text variant="small-strong">{m.action.draft.name}</Text>
+                    </div>
+                    {m.action.draft.description ? (
+                      <Text variant="mini" color="tertiary" className="mt-0.5">
+                        {m.action.draft.description}
+                      </Text>
+                    ) : null}
+                    {m.action.draft.hashtags.length || m.action.draft.semanticKeywords.length ? (
+                      <Text variant="mini" color="tertiary" className="mt-1">
+                        {[...m.action.draft.hashtags.map((tag) => `#${tag}`), ...m.action.draft.semanticKeywords]
+                          .slice(0, 6).join(" · ")}
+                      </Text>
+                    ) : null}
+                    <Button
+                      size="small"
+                      variant={savedFeedIds.has(m.id) ? "transparent" : "accent"}
+                      className="mt-2"
+                      disabled={savingFeedId === m.id || savedFeedIds.has(m.id)}
+                      onClick={() => void handleSaveFeedDraft(m.id, m.action!.draft)}
+                    >
+                      {savedFeedIds.has(m.id) ? "Saved" : savingFeedId === m.id ? "Saving…" : "Save as custom feed"}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}
@@ -177,7 +261,7 @@ export function AssistantPanel({ onUseInComposer }: { onUseInComposer: (content:
           variant="accent"
           iconOnly
           aria-label="Send"
-          disabled={state === "loading" || !input.trim()}
+          disabled={loading || !input.trim()}
           onClick={() => void handleSend()}
         >
           <Send />
@@ -215,6 +299,11 @@ export function FediverseComposer({
   const [contentType, setContentType] = React.useState<FediverseContentType>("text/plain");
   const [title, setTitle] = React.useState("");
   const [quotePolicy, setQuotePolicy] = React.useState<MastodonQuotePolicy>("public");
+  const [media, setMedia] = React.useState<ComposerMedia[]>([]);
+  const [gifOpen, setGifOpen] = React.useState(false);
+  const [gifQuery, setGifQuery] = React.useState("");
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const aiStatus = useQuery({ queryKey: ["fedipod", "ai", "status"], queryFn: api.ai.status, enabled: open });
 
   const articleSupported = Boolean(capabilities?.objectTypes.includes("Article"));
   const availableContentTypes = capabilities?.contentTypes ?? ["text/plain"];
@@ -231,6 +320,12 @@ export function FediverseComposer({
     setContentType("text/plain");
     setTitle("");
     setQuotePolicy("public");
+    setMedia((current) => {
+      current.forEach((item) => { if (item.kind === "local") URL.revokeObjectURL(item.previewUrl); });
+      return [];
+    });
+    setGifOpen(false);
+    setGifQuery("");
   }, [open]);
 
   React.useEffect(() => {
@@ -241,8 +336,25 @@ export function FediverseComposer({
   }, [capabilities, contentType, objectType]);
 
   const post = useMutation({
-    mutationFn: () =>
-      api.fedipod.post({
+    mutationFn: async () => {
+      const prepared = [...media];
+      for (let index = 0; index < prepared.length; index += 1) {
+        const item = prepared[index];
+        if (item.kind === "uploaded") {
+          if (item.description.trim() !== (item.attachment.description || "").trim()) {
+            const attachment = await api.fedipod.updateMediaDescription(item.attachment.id, item.description);
+            prepared[index] = { ...item, attachment };
+            setMedia([...prepared]);
+          }
+          continue;
+        }
+        const attachment = await api.fedipod.uploadMedia({ filename: item.file.name,
+          mimeType: item.mimeType, data: await item.file.arrayBuffer(), description: item.description });
+        URL.revokeObjectURL(item.previewUrl);
+        prepared[index] = { key: item.key, kind: "uploaded", attachment, description: item.description };
+        setMedia([...prepared]);
+      }
+      return api.fedipod.post({
         status: text.trim(),
         spoilerText: cwEnabled ? cw.trim() || "Sensitive content" : null,
         visibility,
@@ -253,7 +365,9 @@ export function FediverseComposer({
         objectType: replyTo || quoteTarget ? "Note" : objectType,
         title: !replyTo && !quoteTarget && objectType === "Article" ? title.trim() : null,
         contentType: replyTo || quoteTarget ? "text/plain" : contentType,
-      }),
+        mediaIds: prepared.map((item) => item.kind === "uploaded" ? item.attachment.id : "").filter(Boolean),
+      });
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] });
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "notifications"] });
@@ -264,6 +378,52 @@ export function FediverseComposer({
     },
     onError: (e: Error) => toast.error(e.message || "Could not post"),
   });
+
+  const gifSearch = useMutation({
+    mutationFn: (query: string) => api.fedipod.searchGifs(query),
+    onError: (error: Error) => toast.error(error.message || "Could not search GIFs"),
+  });
+  const gifImport = useMutation({
+    mutationFn: (gif: KlipyGif) => api.fedipod.importGif(gif.id, gif.title),
+    onSuccess: (attachment) => {
+      setMedia((current) => current.length >= 4 ? current : [...current, {
+        key: `gif-${attachment.id}`, kind: "uploaded", attachment,
+        description: attachment.description || "GIF",
+      }]);
+      setGifOpen(false);
+    },
+    onError: (error: Error) => toast.error(error.message || "Could not import GIF"),
+  });
+
+  const removeMedia = (key: string) => setMedia((current) => current.filter((item) => {
+    if (item.key !== key) return true;
+    if (item.kind === "local") URL.revokeObjectURL(item.previewUrl);
+    return false;
+  }));
+
+  const addFiles = (files: FileList | null) => {
+    if (!files) return;
+    const available = Math.max(0, 4 - media.length);
+    const valid = [...files].map((file) => ({ file, mimeType: mediaMimeType(file.type, file.name) }))
+      .filter((entry): entry is { file: File; mimeType: string } => {
+        if (!entry.mimeType || !SUPPORTED_UPLOAD_MEDIA_TYPES.has(entry.mimeType)
+          || (!entry.mimeType.startsWith("image/") && !entry.mimeType.startsWith("video/"))) {
+          toast.error(`${entry.file.name}: unsupported media type`); return false;
+        }
+        const limit = entry.mimeType.startsWith("video/") ? MEDIA_UPLOAD_LIMITS.video : MEDIA_UPLOAD_LIMITS.image;
+        if (!entry.file.size || entry.file.size > limit) {
+          toast.error(`${entry.file.name}: media must be at most ${limit / 1024 / 1024} MB`); return false;
+        }
+        return true;
+      });
+    const additions = valid.slice(0, available).map(({ file, mimeType }): ComposerMedia => ({
+      key: `local-${crypto.randomUUID()}`, kind: "local", file,
+      mimeType, previewUrl: URL.createObjectURL(file), description: "",
+    }));
+    if (valid.length > available) toast.error("A post can contain at most 4 media attachments");
+    setMedia((current) => [...current, ...additions]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleUseInComposer = (content: string) => {
     setText((current) => (current ? `${current}\n\n${content}` : content));
@@ -391,6 +551,53 @@ export function FediverseComposer({
                 size="large"
                 autoFocus
               />
+              <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif,video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,.webm,.webp,.ogv,.mkv"
+                multiple className="hidden" onChange={(event) => addFiles(event.target.files)} />
+              {media.length ? (
+                <div className="grid grid-cols-2 gap-2" aria-label="Media attachments">
+                  {media.map((item) => {
+                    const url = item.kind === "local" ? item.previewUrl : item.attachment.url;
+                    const isVideo = item.kind === "local" ? item.mimeType.startsWith("video/")
+                      : item.attachment.type === "video" || item.attachment.type === "gifv";
+                    return <div key={item.key} className="relative flex flex-col gap-1.5 rounded-control border border-secondary p-2">
+                      {isVideo ? <video src={url} className="h-28 w-full rounded object-contain bg-black" muted playsInline controls />
+                        : <img src={url} alt="" className="h-28 w-full rounded object-contain bg-black" />}
+                      <Input value={item.description} maxLength={1500} placeholder="Describe this media for accessibility"
+                        aria-label="Media description" onChange={(event) => setMedia((current) => current.map((entry) =>
+                          entry.key === item.key ? { ...entry, description: event.target.value } : entry))} />
+                      <Button type="button" size="small" variant="filled" iconOnly aria-label="Remove media"
+                        className="absolute right-3 top-3" onClick={() => removeMedia(item.key)}><X /></Button>
+                    </div>;
+                  })}
+                </div>
+              ) : null}
+              {gifOpen ? (
+                <div className="flex flex-col gap-2 rounded-control border border-secondary p-3">
+                  <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); if (gifQuery.trim()) gifSearch.mutate(gifQuery.trim()); }}>
+                    <Input value={gifQuery} onChange={(event) => setGifQuery(event.target.value)} maxLength={100}
+                      placeholder="Search KLIPY" aria-label="Search KLIPY GIFs" />
+                    <Button type="submit" size="small" variant="accent" disabled={!gifQuery.trim() || gifSearch.isPending}><Search />Search</Button>
+                  </form>
+                  {gifSearch.data?.length ? <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto">
+                    {gifSearch.data.map((gif) => <button key={gif.id} type="button" disabled={gifImport.isPending || media.length >= 4}
+                      className="overflow-hidden rounded-control border border-secondary hover:border-primary disabled:opacity-50"
+                      aria-label={`Add GIF: ${gif.title}`} onClick={() => gifImport.mutate(gif)}>
+                      <img src={gif.previewUrl} alt={gif.title} className="h-24 w-full object-cover" loading="lazy" />
+                    </button>)}
+                  </div> : gifSearch.isSuccess ? <Text variant="mini" color="tertiary">No GIFs found.</Text> : null}
+                  <Text variant="mini" color="tertiary">GIF search powered by KLIPY.</Text>
+                </div>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="small" variant="filled" disabled={media.length >= 4 || post.isPending}
+                  onClick={() => fileInputRef.current?.click()}><ImagePlus />Photo or video</Button>
+                <Button type="button" size="small" variant="filled" disabled={media.length >= 4 || post.isPending}
+                  onClick={() => setGifOpen((value) => !value)}><Film />GIF</Button>
+                {gifOpen && aiStatus.data && !aiStatus.data.klipyEnabled ? (
+                  <Text variant="mini" color="tertiary">Add a KLIPY API key in Settings → Provider Keys.</Text>
+                ) : null}
+                {media.length ? <Text variant="mini" color="tertiary" className="self-center">{media.length} / 4 attachments</Text> : null}
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <SegmentedControl
                   size="small"
@@ -425,7 +632,10 @@ export function FediverseComposer({
               </div>
             </div>
           ) : (
-            <AssistantPanel onUseInComposer={handleUseInComposer} />
+            <AssistantPanel
+              onUseInComposer={handleUseInComposer}
+              providerConfigured={Boolean(aiStatus.data?.enabled)}
+            />
           )}
         </DialogBody>
         {mode === "compose" ? (
@@ -435,7 +645,7 @@ export function FediverseComposer({
             </Button>
             <Button
               variant="accent"
-              disabled={post.isPending || !text.trim() || (objectType === "Article" && !title.trim())}
+              disabled={post.isPending || (!text.trim() && media.length === 0) || (objectType === "Article" && !title.trim())}
               onClick={() => post.mutate()}
             >
               <Send />

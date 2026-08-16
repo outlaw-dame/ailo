@@ -79,6 +79,7 @@ export interface MastodonMediaAttachment {
   url: string;
   previewUrl: string | null;
   description: string | null;
+  mimeType: string | null;
 }
 
 export interface MastodonCreatorAttribution {
@@ -116,6 +117,8 @@ export interface MastodonStatus {
   source: { content: string; mediaType: FediverseContentType } | null;
   filtered: MastodonFilterResult[];
   spoilerText: string;
+  language: string | null;
+  sensitive: boolean;
   visibility: string;
   account: MastodonAccount;
   mediaAttachments: MastodonMediaAttachment[];
@@ -163,6 +166,28 @@ export interface MastodonRelationship {
   muting: boolean;
   mutingNotifications: boolean;
 }
+
+export interface MastodonList {
+  id: string;
+  title: string;
+}
+
+export interface CustomFeed {
+  id: string;
+  name: string;
+  description: string;
+  avatarUrl: string | null;
+  bannerUrl: string | null;
+  accounts: string[];
+  hashtags: string[];
+  semanticKeywords: string[];
+  excludeWords: string[];
+  excludeAccounts: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CustomFeedInput = Omit<CustomFeed, "id" | "createdAt" | "updatedAt">;
 
 export interface MastodonTagHistory {
   day: string;
@@ -229,7 +254,16 @@ export interface MastodonFilterResult {
 /* -------------------------------------------------------------------------- */
 
 export type AiProvider = "openai" | "gemini";
-export type ProviderCredential = AiProvider | "safe_browsing";
+export interface AiAssistantMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+export interface AiAssistantAction {
+  type: "custom_feed_draft";
+  draft: CustomFeedInput;
+}
+export type TranslationProvider = AiProvider | "deepl" | "libretranslate";
+export type ProviderCredential = AiProvider | "safe_browsing" | "klipy" | "deepl" | "libretranslate";
 export type ProviderCredentialSource = "local" | "environment" | null;
 
 export interface ProviderCredentialState {
@@ -252,6 +286,25 @@ export interface AiStatus {
   defaultProvider: AiProvider | null;
   models: Partial<Record<AiProvider, string>>;
   safeBrowsingEnabled: boolean;
+  klipyEnabled: boolean;
+  translationProviders: TranslationProvider[];
+  defaultTranslationProvider: TranslationProvider | null;
+}
+
+export interface TranslationSettings {
+  provider: TranslationProvider | null;
+  libreTranslateUrl: string;
+  autoTranslate: boolean;
+  targetLanguage: string;
+  configuredProviders: TranslationProvider[];
+}
+
+export interface KlipyGif {
+  id: string;
+  title: string;
+  previewUrl: string;
+  width: number | null;
+  height: number | null;
 }
 
 export interface SafeBrowsingThreat {
@@ -309,6 +362,14 @@ export interface FediPodCapabilities {
   maxTitleCharacters: number;
   maxPinnedStatuses: number;
   supportsCommunityTargeting: boolean;
+  compatibility: FediPodCompatibility;
+}
+
+export interface FediPodCompatibility {
+  apiVersion: number;
+  minAiloApiVersion: number;
+  fedipodVersion: string;
+  features: string[];
 }
 
 export interface MastodonNotification {
