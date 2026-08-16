@@ -6,13 +6,16 @@ import { postsStore } from "../services/posts-store.js";
 import type { FediverseContentType, FediverseObjectType, FediverseVisibility } from "../types.js";
 import type { MastodonQuotePolicy } from "../types.js";
 import type {
-  AiAssistantMessage, AiFilterMatchDocument, AiFilterMatchQuery, AiProvider, ProviderCredential, TranslationProvider,
+  AiAssistantMessage, AiFilterMatchDocument, AiFilterMatchQuery, AiProvider, FilterKeywordInput, ProviderCredential,
+  TranslationProvider,
 } from "../types.js";
+import { SEMANTIC_MODEL_GEMINI, SEMANTIC_MODEL_LOCAL, SEMANTIC_MODEL_OPENAI } from "../types.js";
 
 const VISIBILITIES: FediverseVisibility[] = ["public", "unlisted", "private", "direct"];
 const OBJECT_TYPES: FediverseObjectType[] = ["Note", "Article"];
 const CONTENT_TYPES: FediverseContentType[] = ["text/plain", "text/markdown", "text/x.misskeymarkdown"];
 const QUOTE_POLICIES: MastodonQuotePolicy[] = ["public", "followers", "nobody"];
+const SEMANTIC_MODELS = [SEMANTIC_MODEL_LOCAL, SEMANTIC_MODEL_OPENAI, SEMANTIC_MODEL_GEMINI];
 const MEDIA_TYPES = new Set([
   "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
   "video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/x-matroska",
@@ -29,6 +32,26 @@ function asVisibility(value: unknown): FediverseVisibility {
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${field} is required`);
   return value;
+}
+
+// A filter needs at least one keyword row — Mastodon's own filters allow
+// several, which single-`keyword` createFilter never let this client send.
+function requireFilterKeywords(value: unknown): FilterKeywordInput[] {
+  const rows = Array.isArray(value) ? value : [];
+  const keywords = rows
+    .map((row) => (typeof row === "object" && row !== null ? row as Record<string, unknown> : {}))
+    .filter((row) => typeof row.keyword === "string" && row.keyword.trim())
+    .map((row): FilterKeywordInput => ({
+      keyword: (row.keyword as string).trim(),
+      wholeWord: row.wholeWord === true,
+      semantic: row.semantic !== false,
+      semanticThreshold: typeof row.semanticThreshold === "number"
+        ? Math.min(0.9, Math.max(0.3, row.semanticThreshold)) : 0.6,
+      semanticModel: typeof row.semanticModel === "string" && SEMANTIC_MODELS.includes(row.semanticModel)
+        ? row.semanticModel : SEMANTIC_MODEL_LOCAL,
+    }));
+  if (!keywords.length) throw new Error("at least one keyword or phrase is required");
+  return keywords;
 }
 
 function requireHashtag(value: unknown): string {
@@ -302,12 +325,17 @@ export function registerFediPodHandlers(): void {
       ? (input as Record<string, unknown>) : {};
     return fediPodService.createFilter({
       title: requireString(data.title, "Filter title"),
-      keyword: requireString(data.keyword, "Filter keyword"),
-      wholeWord: data.wholeWord === true,
-      semantic: data.semantic !== false,
-      semanticThreshold: typeof data.semanticThreshold === "number"
-        ? Math.min(0.9, Math.max(0.3, data.semanticThreshold)) : 0.6,
-      semanticModel: "embeddinggemma-300m",
+      keywords: requireFilterKeywords(data.keywords),
+      action: data.action === "hide" ? "hide" : "warn",
+    });
+  });
+
+  ipcMain.handle("fedipod:updateFilter", async (_event, id: unknown, input: unknown) => {
+    const data = typeof input === "object" && input !== null
+      ? (input as Record<string, unknown>) : {};
+    return fediPodService.updateFilter(requireString(id, "Filter id"), {
+      title: requireString(data.title, "Filter title"),
+      keywords: requireFilterKeywords(data.keywords),
       action: data.action === "hide" ? "hide" : "warn",
     });
   });

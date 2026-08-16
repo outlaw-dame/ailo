@@ -36,6 +36,7 @@ import type {
   MastodonList,
   MastodonFilter,
   MastodonFilterResult,
+  FilterInput,
   MastodonFeaturedTag,
   MastodonNotification,
   MastodonRelationship,
@@ -137,6 +138,19 @@ export function mapAccount(raw: unknown): MastodonAccount {
     followingCount: num(r.following_count, num(r.followingCount)),
     group: bool(r.group),
   };
+}
+
+// The wire shape lib/mastoapi.mjs's keywordsOf() expects — a fresh array
+// every time, since a PUT replaces the filter's whole keyword list rather
+// than patching individual rows (see updateFilter's own comment).
+function keywordsAttributes(keywords: FilterInput["keywords"]) {
+  return keywords.map((k) => ({
+    keyword: k.keyword.trim(),
+    whole_word: k.wholeWord ?? false,
+    semantic: k.semantic ?? true,
+    semantic_threshold: k.semanticThreshold ?? 0.6,
+    semantic_model: k.semanticModel ?? "embeddinggemma-300m",
+  }));
 }
 
 function mapFilter(raw: unknown): MastodonFilter {
@@ -822,15 +836,7 @@ class FediPodService {
     await this.authed(`/api/v1/featured_tags/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
-  async createFilter(input: {
-    title: string;
-    keyword: string;
-    wholeWord?: boolean;
-    semantic?: boolean;
-    semanticThreshold?: number;
-    semanticModel?: string;
-    action?: "warn" | "hide";
-  }): Promise<MastodonFilter> {
+  async createFilter(input: FilterInput): Promise<MastodonFilter> {
     const raw = await this.authed("/api/v2/filters", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -838,13 +844,25 @@ class FediPodService {
         title: input.title.trim(),
         context: ["home", "notifications", "public", "thread"],
         filter_action: input.action ?? "warn",
-        keywords_attributes: [{
-          keyword: input.keyword.trim(),
-          whole_word: input.wholeWord ?? false,
-          semantic: input.semantic ?? true,
-          semantic_threshold: input.semanticThreshold ?? 0.6,
-          semantic_model: input.semanticModel ?? "embeddinggemma-300m",
-        }],
+        keywords_attributes: keywordsAttributes(input.keywords),
+      }),
+    });
+    return mapFilter(raw);
+  }
+
+  // The server replaces a filter's whole keyword list with whatever
+  // keywords_attributes names on a PUT (lib/mastoapi.mjs's PUT handler:
+  // `if (body.keywords_attributes) f.keywords = keywordsOf(...)`) — so this
+  // always sends the full desired set rather than tracking which rows were
+  // added/removed/edited since the filter was loaded for editing.
+  async updateFilter(id: string, input: FilterInput): Promise<MastodonFilter> {
+    const raw = await this.authed(`/api/v2/filters/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: input.title.trim(),
+        filter_action: input.action ?? "warn",
+        keywords_attributes: keywordsAttributes(input.keywords),
       }),
     });
     return mapFilter(raw);

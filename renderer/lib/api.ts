@@ -29,6 +29,7 @@ import type {
   MastodonCollectionSourcePreview,
   MastodonCreatorAttribution,
   MastodonFilter,
+  FilterInput,
   MastodonFeaturedTag,
   MastodonNotification,
   MastodonMediaAttachment,
@@ -167,15 +168,10 @@ export const api = {
       ipc().invoke("fedipod:block", id, active) as Promise<MastodonRelationship>,
     mute: (id: string, active: boolean) =>
       ipc().invoke("fedipod:mute", id, active) as Promise<MastodonRelationship>,
-    createFilter: (input: {
-      title: string;
-      keyword: string;
-      wholeWord?: boolean;
-      semantic?: boolean;
-      semanticThreshold?: number;
-      semanticModel?: string;
-      action?: "warn" | "hide";
-    }) => ipc().invoke("fedipod:createFilter", input) as Promise<MastodonFilter>,
+    createFilter: (input: FilterInput) =>
+      ipc().invoke("fedipod:createFilter", input) as Promise<MastodonFilter>,
+    updateFilter: (id: string, input: FilterInput) =>
+      ipc().invoke("fedipod:updateFilter", id, input) as Promise<MastodonFilter>,
     deleteFilter: (id: string) =>
       ipc().invoke("fedipod:deleteFilter", id) as Promise<{ ok: true }>,
     capabilities: () => ipc().invoke("fedipod:capabilities") as Promise<FediPodCapabilities>,

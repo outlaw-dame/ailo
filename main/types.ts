@@ -283,6 +283,24 @@ export interface MastodonFilterResult {
   keywordMatches: string[];
 }
 
+/** One keyword/phrase row on a filter being created or edited — Mastodon's
+ * own filters hold several of these per filter; a single `keyword` string
+ * on the create call was the whole reason "add multiple keywords" and
+ * "edit a filter" didn't work. */
+export interface FilterKeywordInput {
+  keyword: string;
+  wholeWord?: boolean;
+  semantic?: boolean;
+  semanticThreshold?: number;
+  semanticModel?: string;
+}
+
+export interface FilterInput {
+  title: string;
+  action?: "warn" | "hide";
+  keywords: FilterKeywordInput[];
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Ailo/FediPod extension: provider-backed features (/api/v1/ailo/ai/*)      */
 /*  Calls happen only in FediPod — Ailo never stores provider API keys.       */

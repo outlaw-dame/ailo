@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Globe2, ListFilter, Sparkles, ShieldBan, Trash2, VolumeX } from "lucide-react";
+import { Globe2, ListFilter, Pencil, Sparkles, ShieldBan, Trash2, VolumeX, X } from "lucide-react";
 import {
   Badge,
   Button,
@@ -10,14 +10,22 @@ import {
   SegmentedControlItem,
   Switch,
   Text,
+  Textarea,
   toast,
 } from "@glaze/core/components";
 
 import { api } from "../lib/api";
 import { semanticFilterService } from "../lib/semantic-filter-service";
 import { SEMANTIC_MODEL_GEMINI, SEMANTIC_MODEL_LOCAL, SEMANTIC_MODEL_OPENAI } from "../lib/types";
-import type { AiAccountSuggestion, AiKeywordSuggestion, MastodonAccount } from "../lib/types";
+import type { AiAccountSuggestion, AiKeywordSuggestion, FilterInput, MastodonAccount, MastodonFilter } from "../lib/types";
 import { AiProviderControl, useAiProvider } from "./ai-provider-control";
+
+// One keyword/phrase per line, same raw-text-until-save shape
+// custom-feed-editor.tsx already uses for its own list fields — feeding a
+// parsed array back into a controlled textarea on every keystroke is what
+// silently ate the newline Enter leaves before the next line's first
+// character, so a second keyword looked impossible to add.
+const filterLines = (value: string) => [...new Set(value.split("\n").map((item) => item.trim()).filter(Boolean))];
 
 function AccountRow({
   account,
@@ -42,8 +50,9 @@ function AccountRow({
 
 export function FediverseModeration() {
   const queryClient = useQueryClient();
+  const [editingFilterId, setEditingFilterId] = React.useState<string | null>(null);
   const [title, setTitle] = React.useState("");
-  const [keyword, setKeyword] = React.useState("");
+  const [keywordsText, setKeywordsText] = React.useState("");
   const [wholeWord, setWholeWord] = React.useState(false);
   const [action, setAction] = React.useState<"warn" | "hide">("warn");
   const [semanticThreshold, setSemanticThreshold] = React.useState("0.60");
@@ -95,33 +104,52 @@ export function FediverseModeration() {
     },
     onError: (error: Error) => toast.error(error.message),
   });
-  const createFilter = useMutation({
+  const resetFilterForm = () => {
+    setEditingFilterId(null);
+    setTitle("");
+    setKeywordsText("");
+    setWholeWord(false);
+    setAction("warn");
+  };
+  const startEditFilter = (filter: MastodonFilter) => {
+    setEditingFilterId(filter.id);
+    setTitle(filter.title);
+    setKeywordsText(filter.keywords.map((item) => item.keyword).join("\n"));
+    setWholeWord(filter.keywords.some((item) => item.wholeWord));
+    setAction(filter.action === "hide" ? "hide" : "warn");
+    const withModel = filter.keywords.find((item) => item.semanticModel);
+    if (withModel?.semanticThreshold != null) setSemanticThreshold(String(withModel.semanticThreshold));
+    if (withModel?.semanticModel) setSemanticBackend(withModel.semanticModel);
+  };
+  const saveFilter = useMutation({
     mutationFn: async () => {
       // Only the local model needs its ~230 MB weights downloaded/cached;
       // OpenAI-backed keywords are matched server-side, nothing to load here.
       if (semanticBackend === SEMANTIC_MODEL_LOCAL) await semanticFilterService.ensureAvailable();
-      return api.fedipod.createFilter({
+      const input: FilterInput = {
         title,
-        keyword,
-        wholeWord,
         action,
-        semantic: true,
-        semanticThreshold: Number(semanticThreshold),
-        semanticModel: semanticBackend,
-      });
+        keywords: filterLines(keywordsText).map((keyword) => ({
+          keyword,
+          wholeWord,
+          semantic: true,
+          semanticThreshold: Number(semanticThreshold),
+          semanticModel: semanticBackend,
+        })),
+      };
+      return editingFilterId ? api.fedipod.updateFilter(editingFilterId, input) : api.fedipod.createFilter(input);
     },
     onSuccess: async () => {
-      setTitle("");
-      setKeyword("");
-      setWholeWord(false);
+      const wasEditing = editingFilterId !== null;
+      resetFilterForm();
       await refresh();
-      toast.success("Semantic filter created");
+      toast.success(wasEditing ? "Filter updated" : "Semantic filter created");
     },
     onError: (error: Error) => toast.error(error.message),
   });
   const removeFilter = useMutation({
     mutationFn: api.fedipod.deleteFilter,
-    onSuccess: refresh,
+    onSuccess: (_result, id) => { if (id === editingFilterId) resetFilterForm(); return refresh(); },
     onError: (error: Error) => toast.error(error.message),
   });
 
@@ -132,9 +160,8 @@ export function FediverseModeration() {
     mutationFn: (suggestion: AiKeywordSuggestion) =>
       api.fedipod.createFilter({
         title: suggestion.keyword,
-        keyword: suggestion.keyword,
         action: "warn",
-        semantic: false,
+        keywords: [{ keyword: suggestion.keyword, semantic: false }],
       }),
     onSuccess: async (_result, suggestion) => {
       setDismissed((prev) => new Set(prev).add(`keyword:${suggestion.keyword}`));
@@ -188,16 +215,27 @@ export function FediverseModeration() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <div className="flex items-center gap-2"><ListFilter className="size-4" /><Text variant="strong">Semantic filters</Text></div>
-        <Text variant="small" color="tertiary">
-          Match the exact text, hashtag, whole word, or phrase—and posts with the same meaning.
-          EmbeddingGemma analysis runs locally. Its approximately 230 MB model downloads and
-          caches when you add your first filter.
-        </Text>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Filter name" aria-label="Filter name" maxLength={200} />
-          <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Keyword or phrase" aria-label="Filter keyword" maxLength={500} />
+        <div className="flex items-center gap-2">
+          <ListFilter className="size-4" /><Text variant="strong">Semantic filters</Text>
+          {editingFilterId ? <Badge size="small" color="blue">Editing</Badge> : null}
         </div>
+        <Text variant="small" color="tertiary">
+          Match exact text, hashtags, whole words, or phrases—several per filter—and posts with the
+          same meaning. EmbeddingGemma analysis runs locally. Its approximately 230 MB model
+          downloads and caches when you add your first filter.
+        </Text>
+        <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Filter name" aria-label="Filter name" maxLength={200} />
+        <label className="flex flex-col gap-1.5">
+          <Text variant="mini" color="tertiary">One keyword or phrase per line — any of them matches this filter.</Text>
+          <Textarea
+            value={keywordsText}
+            onChange={(event) => setKeywordsText(event.target.value)}
+            placeholder={"spoilers\nseason finale"}
+            aria-label="Filter keywords or phrases"
+            rows={3}
+            maxLength={5000}
+          />
+        </label>
         <div className="flex flex-wrap items-center gap-2">
           <SegmentedControl size="small" value={action} onValueChange={(value) => setAction(value as "warn" | "hide")} aria-label="Filter action">
             <SegmentedControlItem value="warn">Warn</SegmentedControlItem>
@@ -225,9 +263,14 @@ export function FediverseModeration() {
             </SegmentedControl>
           ) : null}
           <Label className="gap-2"><Switch checked={wholeWord} onCheckedChange={setWholeWord} />Whole-word exact match</Label>
-          <Button className="ml-auto" size="small" variant="accent" disabled={createFilter.isPending || !title.trim() || !keyword.trim()} onClick={() => createFilter.mutate()}>
-            Add filter
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            {editingFilterId ? (
+              <Button size="small" variant="transparent" onClick={resetFilterForm}><X />Cancel</Button>
+            ) : null}
+            <Button size="small" variant="accent" disabled={saveFilter.isPending || !title.trim() || !filterLines(keywordsText).length} onClick={() => saveFilter.mutate()}>
+              {editingFilterId ? "Save changes" : "Add filter"}
+            </Button>
+          </div>
         </div>
         {filters.data?.map((filter) => (
           <div key={filter.id} className="flex items-center gap-3 rounded-control border border-secondary px-3 py-2">
@@ -245,6 +288,9 @@ export function FediverseModeration() {
               </div>
               <Text variant="mini" color="tertiary" truncate>{filter.keywords.map((item) => item.keyword).join(", ")}</Text>
             </div>
+            <Button size="small" variant="transparent" iconOnly aria-label={`Edit filter ${filter.title}`} onClick={() => startEditFilter(filter)}>
+              <Pencil />
+            </Button>
             <Button size="small" variant="transparent" iconOnly aria-label={`Delete filter ${filter.title}`} disabled={removeFilter.isPending} onClick={() => removeFilter.mutate(filter.id)}>
               <Trash2 />
             </Button>

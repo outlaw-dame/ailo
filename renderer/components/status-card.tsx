@@ -26,6 +26,7 @@ import { MediaCarousel } from "./media-carousel";
 import { supportedMediaKind } from "../lib/media-attachments";
 import { canAutoTranslatePost, languageName } from "../lib/translation";
 import { actionableError } from "../lib/actionable-error";
+import { patchStatusInCaches } from "../lib/status-cache";
 
 export function StatusCard({
   status,
@@ -60,12 +61,21 @@ export function StatusCard({
 
   const favourite = useMutation({
     mutationFn: () => api.fedipod.favourite(s.id, !s.favourited),
-    onSuccess: invalidate,
+    // Patches every cached list this status is sitting in directly, using
+    // the server's own returned counts — invalidating just ["fedipod",
+    // "timeline"] left every other view (a custom feed, a hashtag
+    // timeline, "for you", search, a people list…) never refetching, so
+    // the like looked like it silently did nothing anywhere but home.
+    onSuccess: (data) => patchStatusInCaches(queryClient, s.id, {
+      favourited: data.favourited, favouritesCount: data.favouritesCount,
+    }),
     onError: (e: Error) => toast.error(e.message),
   });
   const boost = useMutation({
     mutationFn: () => api.fedipod.boost(s.id, !s.reblogged),
-    onSuccess: invalidate,
+    onSuccess: (data) => patchStatusInCaches(queryClient, s.id, {
+      reblogged: data.reblogged, reblogsCount: data.reblogsCount,
+    }),
     onError: (e: Error) => toast.error(e.message),
   });
   const follow = useMutation({
@@ -98,7 +108,10 @@ export function StatusCard({
   });
   const pin = useMutation({
     mutationFn: () => api.fedipod.pin(s.id, !s.pinned),
-    onSuccess: () => { invalidate(); toast.success(s.pinned ? "Post unpinned" : "Post pinned"); },
+    onSuccess: (data) => {
+      patchStatusInCaches(queryClient, s.id, { pinned: data.pinned });
+      toast.success(data.pinned ? "Post pinned" : "Post unpinned");
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
