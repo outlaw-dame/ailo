@@ -4,6 +4,8 @@ import test from "node:test";
 import type { MastodonFilter, MastodonStatus } from "./types";
 import {
   SemanticFilterService,
+  openAiDocument,
+  openAiQuery,
   semanticChunks,
   semanticDocument,
   semanticQuery,
@@ -63,6 +65,15 @@ test("EmbeddingGemma receives its documented retrieval prompts", () => {
     semanticDocument("The best soil for tomatoes.", "Garden notes"),
     "title: Garden notes | text: The best soil for tomatoes.",
   );
+});
+
+// OpenAI's embeddings don't get EmbeddingGemma's retrieval-prompt template
+// (see openAiQuery/openAiDocument's own comment for the measured reason) —
+// same '#' stripping as the templated form, just no wrapper around it.
+test("OpenAI's query/document text has no retrieval-prompt template", () => {
+  assert.equal(openAiQuery("#gardening"), "gardening");
+  assert.equal(openAiQuery("electric cars"), "electric cars");
+  assert.equal(openAiDocument("The best soil for tomatoes."), "The best soil for tomatoes.");
 });
 
 function keywordFilter(keyword: string, overrides: Partial<MastodonFilter["keywords"][number]> = {}): MastodonFilter {

@@ -60,8 +60,18 @@ const BLOCKED_MESSAGE: Record<string, string> = {
   disabled: "AI is currently unavailable for this account.",
 };
 
+// Names the draft_custom_feed capability explicitly (lib/assistant-tools.mjs
+// wires the tool itself either way, and its own description already tells
+// the model to call it) — a system prompt that only ever frames this as a
+// post-drafting assistant biases a smaller model like the default
+// gpt-4o-mini away from reaching for a tool nothing here mentioned it has,
+// so this is reinforcement, not the only place the instruction lives.
 const ASSISTANT_SYSTEM_PROMPT =
-  "You are a warm, concise writing assistant helping the user draft short posts (roughly 500 characters) to share on the Fediverse. Offer a couple of concrete phrasing options when it helps, and keep the tone conversational otherwise.";
+  "You are a warm, concise assistant for the Fediverse. Help the user draft short posts (roughly 500 "
+  + "characters) to share — offer a couple of concrete phrasing options when it helps, and keep the tone "
+  + "conversational otherwise. You can also draft a custom feed (a saved rule set of accounts, hashtags, "
+  + "topics, and exclusions) whenever the user asks to create, build, or set one up — use the "
+  + "draft_custom_feed tool for that instead of just describing what a feed would look like.";
 
 /**
  * Chat for open-ended conversational drafting help. Uses your configured

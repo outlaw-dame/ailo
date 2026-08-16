@@ -82,6 +82,26 @@ export function semanticDocument(text: string, title: string | null): string {
   return `title: ${normalizedTitle || "none"} | text: ${text}`;
 }
 
+// semanticQuery/semanticDocument's "task: X | query: Y" / "title: Z | text:
+// W" shape is EmbeddingGemma's own documented retrieval-prompt format (see
+// the test asserting it), which the local model and Gemini's own
+// text-embedding-004/gemini-embedding-* — the same Gecko lineage — are
+// documented to expect and benefit from too. OpenAI's text-embedding-3-*
+// models were never trained on that convention: A/B tested against the
+// real API (a short keyword like "nsfw" against realistic post text), the
+// templated pair scored 0.536 — below every threshold preset this app
+// offers — and the identical pair with no template at all scored 0.637,
+// crossing the default "Balanced" preset the templated version missed.
+// Used only for the OpenAI-routed half of matchRemoteKeywords below; the
+// local and Gemini paths keep the templated functions unchanged.
+export function openAiQuery(keyword: string): string {
+  return keyword.replace(/^#+/, "").trim();
+}
+
+export function openAiDocument(text: string): string {
+  return text;
+}
+
 function semanticThreshold(keyword: MastodonFilter["keywords"][number]): number {
   if (keyword.semanticModel === MODEL_TAG) return keyword.semanticThreshold ?? DEFAULT_THRESHOLD;
   const legacy = keyword.semanticThreshold ?? 0.55;
@@ -227,20 +247,24 @@ export class SemanticFilterService {
     return new Map(unique.map((text) => [text, this.cache.get(text)!]));
   }
 
-  /** Remote-provider keywords are matched by FediPod instead of the local model. */
+  /** Remote-provider keywords are matched by FediPod instead of the local model.
+   * `documentsByStatus` is expected to already be formatted for `provider` —
+   * see openAiQuery/openAiDocument's comment for why OpenAI gets different
+   * text than Gemini or the local model do. */
   private async matchRemoteKeywords(
     filters: MastodonFilter[],
     documentsByStatus: Map<string, string[]>,
     semanticModel: string,
     provider: AiProvider,
   ): Promise<Map<string, Set<string>>> {
+    const buildQuery = provider === "openai" ? openAiQuery : semanticQuery;
     const queries: AiFilterMatchQuery[] = [];
     for (const filter of filters) {
       for (const keyword of filter.keywords) {
         if (keyword.semantic && keyword.semanticModel === semanticModel) {
           queries.push({
             id: `${filter.id}:${keyword.id}`,
-            text: semanticQuery(keyword.keyword),
+            text: buildQuery(keyword.keyword),
             threshold: keyword.semanticThreshold ?? undefined,
           });
         }
@@ -313,6 +337,13 @@ export class SemanticFilterService {
     ]));
     const allDocuments = [...documentsByStatus.values()].flat();
     if (!allDocuments.length) return statuses;
+    // OpenAI gets its own untemplated copy — see openAiQuery/openAiDocument's
+    // comment. Chunking is pure string work, cheap enough to redo rather
+    // than thread a second shape through everything above.
+    const openAiDocumentsByStatus = new Map(targets.map((status) => [
+      status.id,
+      semanticChunks(semanticText(status)).map((chunk) => openAiDocument(chunk)),
+    ]));
 
     // Keywords stay local by default. Only explicitly selected provider
     // models go over the network.
@@ -337,7 +368,7 @@ export class SemanticFilterService {
     }
 
     const openAiMatches = await this.matchRemoteKeywords(
-      semanticFilters, documentsByStatus, SEMANTIC_MODEL_OPENAI, "openai");
+      semanticFilters, openAiDocumentsByStatus, SEMANTIC_MODEL_OPENAI, "openai");
     const geminiMatches = await this.matchRemoteKeywords(
       semanticFilters, documentsByStatus, SEMANTIC_MODEL_GEMINI, "gemini");
 
