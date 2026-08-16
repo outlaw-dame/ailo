@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AtSign, Bell, Compass, Hash, Home, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { AtSign, Bell, Compass, Hash, Home, RefreshCw, Sparkles } from "lucide-react";
 import {
   Button,
   EmptyState,
@@ -14,7 +14,6 @@ import {
 import { FediverseComposer } from "../components/fediverse-composer";
 import { FloatingComposeButton } from "../components/floating-compose-button";
 import { StatusCard } from "../components/status-card";
-import { FediverseModeration } from "../components/fediverse-moderation";
 import { FediverseDiscover } from "../components/fediverse-discover";
 import { FediverseTags } from "../components/fediverse-tags";
 import { api } from "../lib/api";
@@ -24,7 +23,7 @@ import { semanticFilterService } from "../lib/semantic-filter-service";
 import { filterCustomFeed } from "../lib/custom-feed-match";
 import type { MastodonStatus } from "../lib/types";
 
-type Tab = "for-you" | "home" | "tag-feed" | "notifications" | "discover" | "tags" | "moderation";
+type Tab = "for-you" | "home" | "tag-feed" | "notifications" | "discover" | "tags";
 
 const NOTIFICATION_LABEL: Record<string, string> = {
   mention: "mentioned you",
@@ -154,15 +153,6 @@ export function FediverseView() {
   });
 
   const refresh = () => {
-    if (tab === "moderation") {
-      void Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["fedipod", "blocks"] }),
-        queryClient.invalidateQueries({ queryKey: ["fedipod", "mutes"] }),
-        queryClient.invalidateQueries({ queryKey: ["fedipod", "domain-blocks"] }),
-        queryClient.invalidateQueries({ queryKey: ["fedipod", "filters"] }),
-      ]);
-      return;
-    }
     if (tab === "for-you") { void forYouQuery.refetch(); return; }
     if (tab === "tags") {
       void Promise.all([
@@ -301,10 +291,6 @@ export function FediverseView() {
                 <Hash />
                 Tags
               </SegmentedControlItem>
-              <SegmentedControlItem value="moderation">
-                <ShieldCheck />
-                Safety
-              </SegmentedControlItem>
             </SegmentedControl>
             <Button size="small" variant="filled" iconOnly aria-label="Refresh" onClick={refresh}>
               <RefreshCw />
@@ -416,10 +402,8 @@ export function FediverseView() {
             )
           ) : tab === "tags" ? (
             <FediverseTags />
-          ) : tab === "discover" ? (
-            <FediverseDiscover />
           ) : (
-            <FediverseModeration />
+            <FediverseDiscover />
           )}
         </div>
       </ScrollArea>

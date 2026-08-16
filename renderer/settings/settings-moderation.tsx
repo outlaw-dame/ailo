@@ -18,7 +18,7 @@ import { api } from "../lib/api";
 import { semanticFilterService } from "../lib/semantic-filter-service";
 import { SEMANTIC_MODEL_GEMINI, SEMANTIC_MODEL_LOCAL, SEMANTIC_MODEL_OPENAI } from "../lib/types";
 import type { AiAccountSuggestion, AiKeywordSuggestion, FilterInput, MastodonAccount, MastodonFilter } from "../lib/types";
-import { AiProviderControl, useAiProvider } from "./ai-provider-control";
+import { AiProviderControl, useAiProvider } from "../components/ai-provider-control";
 
 // One keyword/phrase per line, same raw-text-until-save shape
 // custom-feed-editor.tsx already uses for its own list fields — feeding a
@@ -48,7 +48,10 @@ function AccountRow({
   );
 }
 
-export function FediverseModeration() {
+/** Blocks, domain blocks, mutes, keyword/semantic filters, and AI-suggested
+ * additions to any of the above — previously a Fediverse-view tab ("Safety"),
+ * moved under Settings since it's account configuration, not a feed. */
+export function ModerationSettings() {
   const queryClient = useQueryClient();
   const [editingFilterId, setEditingFilterId] = React.useState<string | null>(null);
   const [title, setTitle] = React.useState("");

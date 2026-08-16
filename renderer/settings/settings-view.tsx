@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Languages, Palette, UserCog, WandSparkles } from "lucide-react";
+import { KeyRound, Languages, Palette, ShieldCheck, UserCog, WandSparkles } from "lucide-react";
 import {
   Badge,
   Button,
@@ -29,13 +29,15 @@ import type { TranslationProvider } from "../lib/types";
 import { actionableError } from "../lib/actionable-error";
 import { AccountSettings } from "../main/profile-view";
 import { FeedsSettings } from "./settings-feeds";
+import { ModerationSettings } from "./settings-moderation";
 
-type SettingsPage = "accounts" | "appearance" | "feeds" | "providers" | "translation";
+type SettingsPage = "accounts" | "appearance" | "feeds" | "moderation" | "providers" | "translation";
 
 const PAGES: Array<{ id: SettingsPage; label: string; icon: React.ReactNode }> = [
   { id: "accounts", label: "Accounts", icon: <UserCog /> },
   { id: "appearance", label: "Appearance", icon: <Palette /> },
   { id: "feeds", label: "Feeds", icon: <WandSparkles /> },
+  { id: "moderation", label: "Safety", icon: <ShieldCheck /> },
   { id: "providers", label: "Provider Keys", icon: <KeyRound /> },
   { id: "translation", label: "Translation", icon: <Languages /> },
 ];
@@ -193,6 +195,7 @@ export function SettingsView({ embedded = false }: { embedded?: boolean } = {}) 
           {page === "accounts" ? <AccountSettings /> : null}
           {page === "appearance" ? <AppearanceSettings /> : null}
           {page === "feeds" ? <FeedsSettings /> : null}
+          {page === "moderation" ? <ModerationSettings /> : null}
           {page === "providers" ? <ProviderCredentials /> : null}
           {page === "translation" ? <TranslationSettingsPage /> : null}
         </main>
