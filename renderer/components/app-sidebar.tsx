@@ -1,18 +1,10 @@
 import type * as React from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { AtSign, BookOpen, ListFilter, PenLine, Settings, UserRound } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Sidebar, SidebarList, SidebarListItem } from "@glaze/core/components";
 
 type NavId = "feed" | "write" | "feeds" | "fediverse" | "profile" | "settings";
-
-const NAV: Array<{ id: NavId; title: string; path: string; icon: React.ReactNode }> = [
-  { id: "feed", title: "Stories", path: "/", icon: <BookOpen /> },
-  { id: "write", title: "Compose", path: "/write", icon: <PenLine /> },
-  { id: "feeds", title: "Feeds", path: "/feeds", icon: <ListFilter /> },
-  { id: "fediverse", title: "Fediverse", path: "/fediverse", icon: <AtSign /> },
-  { id: "profile", title: "You", path: "/profile", icon: <UserRound /> },
-  { id: "settings", title: "Settings", path: "/settings", icon: <Settings /> },
-];
 
 function activeNav(pathname: string): NavId {
   if (pathname.startsWith("/write")) return "write";
@@ -24,8 +16,19 @@ function activeNav(pathname: string): NavId {
 }
 
 export function AppSidebar() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  const NAV: Array<{ id: NavId; title: string; path: string; icon: React.ReactNode }> = [
+    { id: "feed", title: t("nav.stories"), path: "/", icon: <BookOpen /> },
+    { id: "write", title: t("nav.compose"), path: "/write", icon: <PenLine /> },
+    { id: "feeds", title: t("nav.feeds"), path: "/feeds", icon: <ListFilter /> },
+    { id: "fediverse", title: t("nav.fediverse"), path: "/fediverse", icon: <AtSign /> },
+    { id: "profile", title: t("nav.you"), path: "/profile", icon: <UserRound /> },
+    { id: "settings", title: t("nav.settings"), path: "/settings", icon: <Settings /> },
+  ];
+
   const selected = activeNav(pathname);
   const selectedItem = NAV.find((item) => item.id === selected) ?? NAV[0];
 

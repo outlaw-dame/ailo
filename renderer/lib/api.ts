@@ -101,6 +101,8 @@ export const api = {
   },
   fedipod: {
     status: () => ipc().invoke("fedipod:status") as Promise<FediPodStatus>,
+    getStatus: (id: string) => ipc().invoke("fedipod:getStatus", id) as Promise<MastodonStatus>,
+    statusContext: (id: string) => ipc().invoke("fedipod:statusContext", id) as Promise<{ status: MastodonStatus; ancestors: MastodonStatus[]; descendants: MastodonStatus[] }>,
     connect: (baseUrl: string, token: string, gateToken?: string) =>
       ipc().invoke("fedipod:connect", baseUrl, token, gateToken) as Promise<{
         connected: true;

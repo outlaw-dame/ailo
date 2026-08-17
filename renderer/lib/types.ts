@@ -21,6 +21,8 @@ export interface Post {
 export interface Profile {
   displayName: string;
   bio: string;
+  avatarUrl: string;
+  bannerUrl: string;
   calComPath: string;
   solidIssuer: string;
   solidPodRoot: string;

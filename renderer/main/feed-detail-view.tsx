@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { Settings, Trash2, WandSparkles } from "lucide-react";
 import { Button, ScrollArea, Text, toast, ToolbarBackButton } from "@glaze/core/components";
+import { useTranslation } from "react-i18next";
 
 import { FediverseComposer } from "../components/fediverse-composer";
 import { StatusCard } from "../components/status-card";
@@ -17,6 +18,7 @@ import type { CustomFeed } from "../lib/types";
  * view; creating/editing the feed's rules happens on Settings → Feeds.
  */
 export function FeedDetailView() {
+  const { t } = useTranslation();
   const { feedId } = useParams({ from: "/feeds/$feedId" });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -58,21 +60,21 @@ export function FeedDetailView() {
 
   const drop = useMutation({
     mutationFn: () => api.fedipod.deleteCustomFeed(feedId),
-    onSuccess: () => { toast.success("Custom feed deleted"); void navigate({ to: "/feeds" }); },
+    onSuccess: () => { toast.success(t("feedDetail.deleteSuccess")); void navigate({ to: "/feeds" }); },
     onError: (error: Error) => toast.error(error.message),
   });
 
   return (
     <ScrollArea
-      title={feed ? "" : feedQuery.isLoading ? "Loading…" : "Feed"}
+      title={feed ? "" : feedQuery.isLoading ? t("feedDetail.loading") : t("feedDetail.title")}
       leading={<ToolbarBackButton onClick={() => void navigate({ to: "/feeds" })} />}
       actions={feed ? (
         <div className="flex items-center gap-1.5">
           <Button size="small" variant="transparent" onClick={() => void api.app.openSettings()}>
-            <Settings />Manage
+            <Settings />{t("feedDetail.manage")}
           </Button>
           <Button size="small" variant="transparent" disabled={drop.isPending}
-            onClick={() => { if (window.confirm(`Delete "${feed.name}"? This cannot be undone.`)) drop.mutate(); }}>
+            onClick={() => { if (window.confirm(t("feedDetail.deleteConfirm", { name: feed.name }))) drop.mutate(); }}>
             <Trash2 />
           </Button>
         </div>
@@ -86,7 +88,7 @@ export function FeedDetailView() {
         </div>
       ) : !feed ? (
         <div className="px-8 py-10">
-          <Text color="secondary">This feed could not be found.</Text>
+          <Text color="secondary">{t("feedDetail.notFound")}</Text>
         </div>
       ) : (
         <div className="pb-16">
@@ -105,14 +107,14 @@ export function FeedDetailView() {
           </header>
           <section className="mx-6 mt-6 flex flex-col gap-3">
             {timeline.isLoading ? (
-              <Text color="tertiary">Matching posts…</Text>
+              <Text color="tertiary">{t("feedDetail.loading")}</Text>
             ) : timeline.data?.length ? (
               timeline.data.map((item) => (
                 <StatusCard key={item.id} status={item} ownAccountId={status.data?.account?.id} onHashtag={returnToFediverse}
                   onReply={composer.openReply} onQuote={composer.openQuote} />
               ))
             ) : (
-              <Text color="tertiary">No matching public posts have reached FediPod yet.</Text>
+              <Text color="tertiary">{t("feedDetail.empty")}</Text>
             )}
           </section>
         </div>

@@ -1,5 +1,6 @@
 import * as React from "react";
 import { AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button, Text } from "@glaze/core/components";
 
 interface ContentWarningGateProps {
@@ -8,6 +9,7 @@ interface ContentWarningGateProps {
 }
 
 export function ContentWarningGate({ warning, children }: ContentWarningGateProps) {
+  const { t } = useTranslation();
   const [revealed, setRevealed] = React.useState(false);
 
   if (revealed) {
@@ -17,12 +19,12 @@ export function ContentWarningGate({ warning, children }: ContentWarningGateProp
           <div className="flex min-w-0 items-center gap-2">
             <AlertTriangle className="size-4 shrink-0 text-support-yellow" />
             <Text variant="small" color="secondary" className="truncate">
-              Content warning · {warning}
+              {t("contentWarning.labelWithWarning", { warning })}
             </Text>
           </div>
           <Button size="small" variant="transparent" onClick={() => setRevealed(false)}>
             <EyeOff />
-            Hide
+            {t("contentWarning.hide")}
           </Button>
         </div>
         {children}
@@ -38,14 +40,14 @@ export function ContentWarningGate({ warning, children }: ContentWarningGateProp
           <AlertTriangle className="size-5 text-support-yellow" />
         </div>
         <div className="flex max-w-md flex-col gap-2">
-          <Text variant="heading2">Before you continue</Text>
+          <Text variant="heading2">{t("contentWarning.beforeYouContinue")}</Text>
           <Text color="secondary" className="text-pretty">
             {warning}
           </Text>
         </div>
         <Button size="small" variant="accent" onClick={() => setRevealed(true)}>
           <Eye />
-          Show story
+          {t("contentWarning.showStory")}
         </Button>
       </div>
     </div>

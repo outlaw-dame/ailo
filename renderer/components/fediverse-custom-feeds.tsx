@@ -2,6 +2,7 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { List, Plus, Trash2, UserPlus, WandSparkles } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button, Input, SegmentedControl, SegmentedControlItem, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
@@ -12,6 +13,7 @@ function PeopleLists({ ownAccountId, onReply, onQuote, onHashtag }: {
   ownAccountId?: string; onReply: (status: MastodonStatus) => void;
   onQuote: (status: MastodonStatus) => void; onHashtag: (tag: string) => void;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [title, setTitle] = React.useState("");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -43,7 +45,7 @@ function PeopleLists({ ownAccountId, onReply, onQuote, onHashtag }: {
   });
   const add = useMutation({
     mutationFn: () => api.fedipod.setListAccount(selectedId!, handle, true),
-    onSuccess: async () => { setHandle(""); await refresh(); toast.success("Added without following"); },
+    onSuccess: async () => { setHandle(""); await refresh(); toast.success(t("customFeeds.listAddWithoutFollowing")); },
     onError: (error: Error) => toast.error(error.message),
   });
   const remove = useMutation({
@@ -59,19 +61,19 @@ function PeopleLists({ ownAccountId, onReply, onQuote, onHashtag }: {
   return (
     <div className="grid gap-5 md:grid-cols-[14rem_minmax(0,1fr)]">
       <div className="flex flex-col gap-2">
-        <div className="flex gap-2"><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="New list" maxLength={80} /><Button iconOnly aria-label="Create list" disabled={!title.trim() || create.isPending} onClick={() => create.mutate()}><Plus /></Button></div>
+        <div className="flex gap-2"><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("customFeeds.listNewPlaceholder")} maxLength={80} /><Button iconOnly aria-label={t("customFeeds.listCreateAriaLabel")} disabled={!title.trim() || create.isPending} onClick={() => create.mutate()}><Plus /></Button></div>
         {lists.data?.map((list) => <Button key={list.id} variant={list.id === selectedId ? "filled" : "transparent"} className="justify-start" onClick={() => setSelectedId(list.id)}><List />{list.title}</Button>)}
       </div>
       {selected ? <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-2"><Text variant="strong" className="flex-1">{selected.title}</Text><Button iconOnly variant="transparent" aria-label={`Delete ${selected.title}`} onClick={() => drop.mutate(selected.id)}><Trash2 /></Button></div>
-        <Text variant="small" color="tertiary">People on a list are not followed. Only public posts already received by FediPod are shown.</Text>
-        <div className="flex gap-2"><Input value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="person@example.social" /><Button disabled={!handle.trim() || add.isPending} onClick={() => add.mutate()}><UserPlus />Add</Button></div>
-        {accounts.data?.map((account) => <div key={account.id} className="flex items-center gap-3 rounded-control border border-secondary p-2"><img alt="" src={account.avatar} className="size-8 rounded-full" /><div className="flex min-w-0 flex-1 flex-col"><Text variant="small" truncate>{account.displayName}</Text><Text variant="mini" color="tertiary" truncate>@{account.acct}</Text></div><Button size="small" variant="transparent" onClick={() => remove.mutate(account)}>Remove</Button></div>)}
+        <div className="flex items-center gap-2"><Text variant="strong" className="flex-1">{selected.title}</Text><Button iconOnly variant="transparent" aria-label={t("customFeeds.listDeleteAriaLabel", { title: selected.title })} onClick={() => drop.mutate(selected.id)}><Trash2 /></Button></div>
+        <Text variant="small" color="tertiary">{t("customFeeds.listNote")}</Text>
+        <div className="flex gap-2"><Input value={handle} onChange={(e) => setHandle(e.target.value)} placeholder={t("customFeeds.listHandlePlaceholder")} /><Button disabled={!handle.trim() || add.isPending} onClick={() => add.mutate()}><UserPlus />{t("customFeeds.listAddButton")}</Button></div>
+        {accounts.data?.map((account) => <div key={account.id} className="flex items-center gap-3 rounded-control border border-secondary p-2"><img alt="" src={account.avatar} className="size-8 rounded-full" /><div className="flex min-w-0 flex-1 flex-col"><Text variant="small" truncate>{account.displayName}</Text><Text variant="mini" color="tertiary" truncate>@{account.acct}</Text></div><Button size="small" variant="transparent" onClick={() => remove.mutate(account)}>{t("common.remove")}</Button></div>)}
         <div className="mt-2 flex flex-col gap-3 border-t border-secondary pt-4">
-          <Text variant="strong">List feed</Text>
-          {timeline.data?.length ? timeline.data.map((status) => <StatusCard key={status.id} status={status} ownAccountId={ownAccountId} onReply={onReply} onQuote={onQuote} onHashtag={onHashtag} />) : <Text color="tertiary">No public posts from list members have reached FediPod yet.</Text>}
+          <Text variant="strong">{t("customFeeds.listFeedTitle")}</Text>
+          {timeline.data?.length ? timeline.data.map((status) => <StatusCard key={status.id} status={status} ownAccountId={ownAccountId} onReply={onReply} onQuote={onQuote} onHashtag={onHashtag} />) : <Text color="tertiary">{t("customFeeds.listEmpty")}</Text>}
         </div>
-      </div> : <Text color="tertiary">Create a people list to get started.</Text>}
+      </div> : <Text color="tertiary">{t("customFeeds.listNone")}</Text>}
     </div>
   );
 }
@@ -85,17 +87,18 @@ export function FediverseCustomFeeds({ ownAccountId, onReply, onQuote, onHashtag
   ownAccountId?: string; onReply: (status: MastodonStatus) => void;
   onQuote: (status: MastodonStatus) => void; onHashtag: (tag: string) => void;
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [mode, setMode] = React.useState("feeds");
   const feeds = useQuery({ queryKey: ["fedipod", "custom-feeds"], queryFn: api.fedipod.customFeeds });
   return <div className="flex flex-col gap-5">
-    <SegmentedControl size="small" value={mode} onValueChange={setMode} aria-label="Feed tools">
-      <SegmentedControlItem value="feeds"><WandSparkles />Custom feeds</SegmentedControlItem>
-      <SegmentedControlItem value="lists"><List />People lists</SegmentedControlItem>
+    <SegmentedControl size="small" value={mode} onValueChange={setMode} aria-label={t("customFeeds.feedToolsAriaLabel")}>
+      <SegmentedControlItem value="feeds"><WandSparkles />{t("customFeeds.tabCustomFeeds")}</SegmentedControlItem>
+      <SegmentedControlItem value="lists"><List />{t("customFeeds.tabPeopleLists")}</SegmentedControlItem>
     </SegmentedControl>
     {mode === "lists" ? <PeopleLists ownAccountId={ownAccountId} onReply={onReply} onQuote={onQuote} onHashtag={onHashtag} /> : <div className="flex flex-col gap-2">
       <Button variant="filled" className="justify-start self-start" onClick={() => void api.app.openSettings()}>
-        <Plus />New feed
+        <Plus />{t("customFeeds.newFeed")}
       </Button>
       {feeds.data?.map((feed) => <button key={feed.id} type="button"
         className="flex min-w-0 items-center gap-3 rounded-card border border-transparent p-2 text-left transition-colors hover:bg-control-subtle"
@@ -108,7 +111,7 @@ export function FediverseCustomFeeds({ ownAccountId, onReply, onQuote, onHashtag
         </span>
       </button>)}
       {!feeds.isLoading && !feeds.data?.length ? <Text color="tertiary" className="px-2 py-1">
-        No custom feeds yet. Create one from Settings → Feeds.
+        {t("customFeeds.noFeeds")}
       </Text> : null}
     </div>}
   </div>;

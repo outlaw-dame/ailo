@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NotebookText, Sparkles } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
@@ -19,10 +20,10 @@ function StatTile({ label, value, detail }: { label: string; value: React.ReactN
 
 // "▲ 4 vs last week" / "▼ 2 vs last week" / "same as last week" — `previous`
 // is the single 7-day window immediately before `current`'s, not a delta.
-function trendLabel(current: number, previous: number): string {
+function trendLabel(t: (key: string, options?: Record<string, unknown>) => string, current: number, previous: number): string {
   const diff = current - previous;
-  if (diff === 0) return "same as last week";
-  return `${diff > 0 ? "▲" : "▼"} ${Math.abs(diff)} vs last week`;
+  if (diff === 0) return t("moderation.trendSame");
+  return t(diff > 0 ? "moderation.trendUp" : "moderation.trendDown", { diff: Math.abs(diff) });
 }
 
 function BreakdownList({ title, rows }: { title: string; rows: { label: string; count: number }[] }) {
@@ -45,6 +46,7 @@ function BreakdownList({ title, rows }: { title: string; rows: { label: string; 
  * suggestions — merged here rather than left as their own section, since
  * "here's what happened, here's what to do about it" reads as one thing. */
 export function ModerationWeeklySummary() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [dismissed, setDismissed] = React.useState<Set<string>>(new Set());
 
@@ -89,7 +91,7 @@ export function ModerationWeeklySummary() {
     onSuccess: async (_result, suggestion) => {
       setDismissed((prev) => new Set(prev).add(`keyword:${suggestion.keyword}`));
       await refresh();
-      toast.success(`Added "${suggestion.keyword}" as a filter`);
+      toast.success(t("moderation.filterAdded", { keyword: suggestion.keyword }));
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -101,7 +103,7 @@ export function ModerationWeeklySummary() {
     onSuccess: async (_result, suggestion) => {
       setDismissed((prev) => new Set(prev).add(`account:${suggestion.acct}`));
       await refresh();
-      toast.success(`Blocked @${suggestion.acct}`);
+      toast.success(t("moderation.accountBlocked", { handle: suggestion.acct }));
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -110,7 +112,7 @@ export function ModerationWeeklySummary() {
     onSuccess: async (_result, suggestion) => {
       setDismissed((prev) => new Set(prev).add(`domain:${suggestion.domain}`));
       await refresh();
-      toast.success(`Blocked domain ${suggestion.domain}`);
+      toast.success(t("moderation.domainBlocked", { domain: suggestion.domain }));
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -121,60 +123,63 @@ export function ModerationWeeklySummary() {
   return (
     <section className="flex flex-col gap-3 rounded-control border border-secondary p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <NotebookText className="size-4" /><Text variant="strong">Weekly moderation summary</Text>
+        <NotebookText className="size-4" /><Text variant="strong">{t("moderation.summaryTitle")}</Text>
         {aiEnabled ? <AiProviderControl status={aiStatus.data} provider={aiProvider} onChange={setAiProvider} /> : null}
       </div>
 
       {aiEnabled ? (
-        summary.isPending ? <Text variant="small" color="tertiary">Writing this week's recap…</Text>
+        summary.isPending ? <Text variant="small" color="tertiary">{t("moderation.summaryWriting")}</Text>
         : summary.isError ? null
         : summary.data ? <Text variant="small">{summary.data}</Text>
         : null
       ) : (
         <Text variant="small" color="tertiary">
-          Connect an OpenAI or Gemini key on Provider Keys to get a written recap here each week.
+          {t("moderation.summaryNoProvider")}
         </Text>
       )}
 
       <div className="flex flex-wrap gap-2">
-        <StatTile label="Blocked accounts" value={s?.blockedAccounts ?? "—"}
-          detail={s ? `+${s.newBlockedAccounts} this week` : undefined} />
-        <StatTile label="Muted accounts" value={s?.mutedAccounts ?? "—"}
-          detail={s ? `+${s.newMutedAccounts} this week` : undefined} />
-        <StatTile label="Blocked domains" value={s?.blockedDomains ?? "—"}
-          detail={s ? `+${s.newBlockedDomains} this week` : undefined} />
-        <StatTile label="Active filters" value={s?.activeFilters ?? "—"}
-          detail={s ? `${s.activeKeywords} keyword${s.activeKeywords === 1 ? "" : "s"}/phrase${s.activeKeywords === 1 ? "" : "s"}` : undefined} />
-        <StatTile label="Content blocked this week" value={contentBlocked ?? "—"}
-          detail={s ? `${s.filteredPosts} hidden by filters, ${s.intakeBlockedPosts} kept from reaching you`
-            + ` · ${trendLabel(contentBlocked!, s.previousWeekContentBlocked)}` : undefined} />
+        <StatTile label={t("moderation.blockedAccountsLabel")} value={s?.blockedAccounts ?? "—"}
+          detail={s ? t("moderation.thisWeek", { count: s.newBlockedAccounts }) : undefined} />
+        <StatTile label={t("moderation.mutedAccountsLabel")} value={s?.mutedAccounts ?? "—"}
+          detail={s ? t("moderation.thisWeek", { count: s.newMutedAccounts }) : undefined} />
+        <StatTile label={t("moderation.blockedDomainsLabel")} value={s?.blockedDomains ?? "—"}
+          detail={s ? t("moderation.thisWeek", { count: s.newBlockedDomains }) : undefined} />
+        <StatTile label={t("moderation.activeFiltersLabel")} value={s?.activeFilters ?? "—"}
+          detail={s ? t("moderation.keywordCount", { count: s.activeKeywords }) : undefined} />
+        <StatTile label={t("moderation.contentBlockedLabel")} value={contentBlocked ?? "—"}
+          detail={s ? t("moderation.contentBlockedDetail", {
+            filtered: s.filteredPosts,
+            intake: s.intakeBlockedPosts,
+            trend: trendLabel(t, contentBlocked!, s.previousWeekContentBlocked),
+          }) : undefined} />
       </div>
-      {stats.isError ? <Text variant="mini" color="danger">Could not load this week's moderation stats.</Text> : null}
+      {stats.isError ? <Text variant="mini" color="danger">{t("moderation.statsError")}</Text> : null}
 
       {s && (s.topDomains.length || s.topFilters.length) ? (
         <div className="flex flex-wrap gap-4">
-          <BreakdownList title="Top domains blocked"
+          <BreakdownList title={t("moderation.topDomainsTitle")}
             rows={s.topDomains.map((d) => ({ label: d.domain, count: d.count }))} />
-          <BreakdownList title="By filter"
+          <BreakdownList title={t("moderation.byFilterTitle")}
             rows={s.topFilters.map((f) => ({ label: f.title, count: f.count }))} />
         </div>
       ) : null}
 
       {aiEnabled ? (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2"><Sparkles className="size-4" /><Text variant="small-strong">Suggestions</Text></div>
+          <div className="flex items-center gap-2"><Sparkles className="size-4" /><Text variant="small-strong">{t("moderation.suggestionsTitle")}</Text></div>
           {suggestions.data?.keywords
             .filter((item) => !dismissed.has(`keyword:${item.keyword}`))
             .map((item) => (
               <div key={`keyword:${item.keyword}`} className="flex items-center gap-3 rounded-control border border-secondary px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <Text variant="small">Filter keyword: {item.keyword}</Text>
+                  <Text variant="small">{t("moderation.filterKeyword", { keyword: item.keyword })}</Text>
                   <Text variant="mini" color="tertiary" truncate>{item.reason}</Text>
                 </div>
                 <Button size="small" variant="filled" disabled={acceptKeywordSuggestion.isPending}
-                  onClick={() => acceptKeywordSuggestion.mutate(item)}>Accept</Button>
+                  onClick={() => acceptKeywordSuggestion.mutate(item)}>{t("common.accept")}</Button>
                 <Button size="small" variant="transparent"
-                  onClick={() => setDismissed((prev) => new Set(prev).add(`keyword:${item.keyword}`))}>Dismiss</Button>
+                  onClick={() => setDismissed((prev) => new Set(prev).add(`keyword:${item.keyword}`))}>{t("common.dismiss")}</Button>
               </div>
             ))}
           {suggestions.data?.accounts
@@ -182,13 +187,13 @@ export function ModerationWeeklySummary() {
             .map((item) => (
               <div key={`account:${item.acct}`} className="flex items-center gap-3 rounded-control border border-secondary px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <Text variant="small">Block @{item.acct}</Text>
+                  <Text variant="small">{t("moderation.blockAccount", { handle: item.acct })}</Text>
                   <Text variant="mini" color="tertiary" truncate>{item.reason}</Text>
                 </div>
                 <Button size="small" variant="filled" disabled={acceptAccountSuggestion.isPending}
-                  onClick={() => acceptAccountSuggestion.mutate(item)}>Accept</Button>
+                  onClick={() => acceptAccountSuggestion.mutate(item)}>{t("common.accept")}</Button>
                 <Button size="small" variant="transparent"
-                  onClick={() => setDismissed((prev) => new Set(prev).add(`account:${item.acct}`))}>Dismiss</Button>
+                  onClick={() => setDismissed((prev) => new Set(prev).add(`account:${item.acct}`))}>{t("common.dismiss")}</Button>
               </div>
             ))}
           {suggestions.data?.domains
@@ -196,18 +201,18 @@ export function ModerationWeeklySummary() {
             .map((item) => (
               <div key={`domain:${item.domain}`} className="flex items-center gap-3 rounded-control border border-secondary px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <Text variant="small">Block domain: {item.domain}</Text>
+                  <Text variant="small">{t("moderation.blockDomain", { domain: item.domain })}</Text>
                   <Text variant="mini" color="tertiary" truncate>{item.reason}</Text>
                 </div>
                 <Button size="small" variant="filled" disabled={acceptDomainSuggestion.isPending}
-                  onClick={() => acceptDomainSuggestion.mutate(item)}>Accept</Button>
+                  onClick={() => acceptDomainSuggestion.mutate(item)}>{t("common.accept")}</Button>
                 <Button size="small" variant="transparent"
-                  onClick={() => setDismissed((prev) => new Set(prev).add(`domain:${item.domain}`))}>Dismiss</Button>
+                  onClick={() => setDismissed((prev) => new Set(prev).add(`domain:${item.domain}`))}>{t("common.dismiss")}</Button>
               </div>
             ))}
           {suggestions.data
             && !suggestions.data.keywords.length && !suggestions.data.accounts.length && !suggestions.data.domains.length ? (
-            <Text variant="small" color="tertiary">Nothing to suggest right now.</Text>
+            <Text variant="small" color="tertiary">{t("moderation.noSuggestions")}</Text>
           ) : null}
         </div>
       ) : null}

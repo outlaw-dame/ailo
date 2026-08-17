@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Film, ImagePlus, PenLine, Quote as QuoteIcon, Search, Send, Sparkles, Users, WandSparkles, X,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   Button,
   Dialog,
@@ -50,14 +51,14 @@ interface ChatMessage {
   action?: AiAssistantAction;
 }
 
-const BLOCKED_MESSAGE: Record<string, string> = {
-  "needs-consent": "AI access wasn't allowed. Try asking again when you're ready.",
-  "signed-out": "Sign in to Glaze to chat with the assistant.",
-  "needs-subscription": "This needs an upgraded Glaze plan. Try again to see options.",
-  "insufficient-credits": "You're out of Glaze AI credits for now.",
-  "daily-limit-reached": "You've reached today's AI limit for this app.",
-  "host-unavailable": "Glaze couldn't be reached. Try again.",
-  disabled: "AI is currently unavailable for this account.",
+const BLOCKED_MESSAGE_KEY: Record<string, string> = {
+  "needs-consent": "composer.aiBlockedNeedsConsent",
+  "signed-out": "composer.aiBlockedSignedOut",
+  "needs-subscription": "composer.aiBlockedNeedsSubscription",
+  "insufficient-credits": "composer.aiBlockedInsufficientCredits",
+  "daily-limit-reached": "composer.aiBlockedDailyLimit",
+  "host-unavailable": "composer.aiBlockedHostUnavailable",
+  disabled: "composer.aiBlockedDisabled",
 };
 
 // Names the draft_custom_feed capability explicitly (lib/assistant-tools.mjs
@@ -88,6 +89,7 @@ export function AssistantPanel({
   onUseInComposer: (content: string) => void;
   providerConfigured: boolean;
 }) {
+  const { t } = useTranslation();
   const { streamText, state, enableInHost } = useGlazeAI();
   const queryClient = useQueryClient();
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
@@ -105,9 +107,9 @@ export function AssistantPanel({
       await api.fedipod.saveCustomFeed(draft);
       setSavedFeedIds((prev) => new Set(prev).add(messageId));
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "custom-feeds"] });
-      toast.success(`Saved "${draft.name}" — find it under Custom feeds`);
+      toast.success(t("composer.saveFeedDraftSuccess", { name: draft.name }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not save the feed");
+      toast.error(error instanceof Error ? error.message : t("composer.saveFeedDraftError"));
     } finally {
       setSavingFeedId(null);
     }
@@ -142,7 +144,7 @@ export function AssistantPanel({
           prev.map((m) => (m.id === assistantId ? { ...m, content: reply, action: action ?? undefined } : m)),
         );
       } catch (error) {
-        const message = error instanceof Error && error.message ? error.message : "Something went wrong. Try again.";
+        const message = error instanceof Error && error.message ? error.message : t("composer.aiBlockedGeneric");
         setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: message } : m)));
       } finally {
         setProviderLoading(false);
@@ -177,7 +179,8 @@ export function AssistantPanel({
         return;
       }
       const message =
-        (errorState && BLOCKED_MESSAGE[errorState]) || "Something went wrong. Try again.";
+        (errorState && BLOCKED_MESSAGE_KEY[errorState] && t(BLOCKED_MESSAGE_KEY[errorState]))
+        || t("composer.aiBlockedGeneric");
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantId ? { ...m, content: message } : m)),
       );
@@ -188,7 +191,7 @@ export function AssistantPanel({
     <div className="flex flex-col gap-3">
       {messages.length === 0 ? (
         <Text color="tertiary" className="px-1 py-6 text-center">
-          Ask for help finding the words — a hook for a story, a reply, or just to think out loud.
+          {t("composer.assistantEmpty")}
         </Text>
       ) : (
         <div className="flex flex-col gap-2.5">
@@ -216,7 +219,7 @@ export function AssistantPanel({
                     className="-ml-2"
                     onClick={() => onUseInComposer(m.content)}
                   >
-                    Use in composer
+                    {t("composer.useInComposer")}
                   </Button>
                 ) : null}
                 {m.action?.type === "custom_feed_draft" ? (
@@ -243,7 +246,11 @@ export function AssistantPanel({
                       disabled={savingFeedId === m.id || savedFeedIds.has(m.id)}
                       onClick={() => void handleSaveFeedDraft(m.id, m.action!.draft)}
                     >
-                      {savedFeedIds.has(m.id) ? "Saved" : savingFeedId === m.id ? "Saving…" : "Save as custom feed"}
+                      {savedFeedIds.has(m.id)
+                        ? t("composer.saveFeedDraftSaved")
+                        : savingFeedId === m.id
+                          ? t("composer.saveFeedDraftSaving")
+                          : t("composer.saveFeedDraft")}
                     </Button>
                   </div>
                 ) : null}
@@ -257,7 +264,7 @@ export function AssistantPanel({
         <Textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask the assistant…"
+          placeholder={t("composer.assistantPlaceholder")}
           className="flex-1"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -270,7 +277,7 @@ export function AssistantPanel({
           size="medium"
           variant="accent"
           iconOnly
-          aria-label="Send"
+          aria-label={t("composer.assistantSendAriaLabel")}
           disabled={loading || !input.trim()}
           onClick={() => void handleSend()}
         >
@@ -298,6 +305,7 @@ export function FediverseComposer({
   onCancelQuote: () => void;
   capabilities: FediPodCapabilities | undefined;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [mode, setMode] = React.useState<ComposerMode>("compose");
   const [text, setText] = React.useState("");
@@ -366,7 +374,7 @@ export function FediverseComposer({
       }
       return api.fedipod.post({
         status: text.trim(),
-        spoilerText: cwEnabled ? cw.trim() || "Sensitive content" : null,
+        spoilerText: cwEnabled ? cw.trim() || t("composer.cwDefaultText") : null,
         visibility,
         inReplyToId: replyTo?.id ?? null,
         quotedStatusId: quoteTarget?.id ?? null,
@@ -381,28 +389,28 @@ export function FediverseComposer({
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] });
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "notifications"] });
-      toast.success(replyTo ? "Reply posted" : quoteTarget ? "Quote posted" : "Posted to the Fediverse");
+      toast.success(replyTo ? t("composer.replySuccess") : quoteTarget ? t("composer.quoteSuccess") : t("composer.postSuccess"));
       onCancelReply();
       onCancelQuote();
       onOpenChange(false);
     },
-    onError: (e: Error) => toast.error(e.message || "Could not post"),
+    onError: (e: Error) => toast.error(e.message || t("composer.postError")),
   });
 
   const gifSearch = useMutation({
     mutationFn: (query: string) => api.fedipod.searchGifs(query),
-    onError: (error: Error) => toast.error(error.message || "Could not search GIFs"),
+    onError: (error: Error) => toast.error(error.message || t("composer.gifSearchError")),
   });
   const gifImport = useMutation({
     mutationFn: (gif: KlipyGif) => api.fedipod.importGif(gif.id, gif.title),
     onSuccess: (attachment) => {
       setMedia((current) => current.length >= 4 ? current : [...current, {
         key: `gif-${attachment.id}`, kind: "uploaded", attachment,
-        description: attachment.description || "GIF",
+        description: attachment.description || t("composer.gifDefaultDescription"),
       }]);
       setGifOpen(false);
     },
-    onError: (error: Error) => toast.error(error.message || "Could not import GIF"),
+    onError: (error: Error) => toast.error(error.message || t("composer.gifImportError")),
   });
 
   const removeMedia = (key: string) => setMedia((current) => current.filter((item) => {
@@ -418,11 +426,11 @@ export function FediverseComposer({
       .filter((entry): entry is { file: File; mimeType: string } => {
         if (!entry.mimeType || !SUPPORTED_UPLOAD_MEDIA_TYPES.has(entry.mimeType)
           || (!entry.mimeType.startsWith("image/") && !entry.mimeType.startsWith("video/"))) {
-          toast.error(`${entry.file.name}: unsupported media type`); return false;
+          toast.error(t("composer.mediaUnsupportedType", { filename: entry.file.name })); return false;
         }
         const limit = entry.mimeType.startsWith("video/") ? MEDIA_UPLOAD_LIMITS.video : MEDIA_UPLOAD_LIMITS.image;
         if (!entry.file.size || entry.file.size > limit) {
-          toast.error(`${entry.file.name}: media must be at most ${limit / 1024 / 1024} MB`); return false;
+          toast.error(t("composer.mediaTooLarge", { filename: entry.file.name, limit: limit / 1024 / 1024 })); return false;
         }
         return true;
       });
@@ -430,7 +438,7 @@ export function FediverseComposer({
       key: `local-${crypto.randomUUID()}`, kind: "local", file,
       mimeType, previewUrl: URL.createObjectURL(file), description: "",
     }));
-    if (valid.length > available) toast.error("A post can contain at most 4 media attachments");
+    if (valid.length > available) toast.error(t("composer.mediaLimitReached"));
     setMedia((current) => [...current, ...additions]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -444,21 +452,21 @@ export function FediverseComposer({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="xl" showCloseButton>
         <DialogHeader>
-          <DialogTitle>{replyTo ? "Reply" : quoteTarget ? "Quote" : "Compose"}</DialogTitle>
+          <DialogTitle>{replyTo ? t("composer.titleReply") : quoteTarget ? t("composer.titleQuote") : t("composer.titleCompose")}</DialogTitle>
           <SegmentedControl
             value={mode}
             onValueChange={(v) => setMode(v as ComposerMode)}
             size="small"
             className="mt-2 self-start"
-            aria-label="Composer mode"
+            aria-label={t("composer.composerModeAriaLabel")}
           >
             <SegmentedControlItem value="compose">
               <PenLine />
-              Compose
+              {t("composer.tabCompose")}
             </SegmentedControlItem>
             <SegmentedControlItem value="assistant">
               <Sparkles />
-              Assistant
+              {t("composer.tabAssistant")}
             </SegmentedControlItem>
           </SegmentedControl>
         </DialogHeader>
@@ -468,9 +476,9 @@ export function FediverseComposer({
               {replyTo ? (
                 <div className="flex items-center gap-2 rounded-card border border-secondary bg-well/40 px-3 py-2">
                   <Text variant="small" color="tertiary" truncate className="min-w-0 flex-1">
-                    Replying to @{replyTo.account.acct || replyTo.account.username}
+                    {t("composer.replyingTo", { handle: replyTo.account.acct || replyTo.account.username })}
                   </Text>
-                  <Button size="small" variant="transparent" iconOnly aria-label="Cancel reply" onClick={onCancelReply}>
+                  <Button size="small" variant="transparent" iconOnly aria-label={t("composer.cancelReplyAriaLabel")} onClick={onCancelReply}>
                     <X />
                   </Button>
                 </div>
@@ -479,9 +487,9 @@ export function FediverseComposer({
                 <div className="flex items-center gap-2 rounded-card border border-secondary bg-well/40 px-3 py-2">
                   <QuoteIcon className="size-4 shrink-0 text-tertiary" />
                   <Text variant="small" color="tertiary" truncate className="min-w-0 flex-1">
-                    Quoting @{quoteTarget.account.acct || quoteTarget.account.username}
+                    {t("composer.quotingTo", { handle: quoteTarget.account.acct || quoteTarget.account.username })}
                   </Text>
-                  <Button size="small" variant="transparent" iconOnly aria-label="Cancel quote" onClick={onCancelQuote}>
+                  <Button size="small" variant="transparent" iconOnly aria-label={t("composer.cancelQuoteAriaLabel")} onClick={onCancelQuote}>
                     <X />
                   </Button>
                 </div>
@@ -491,20 +499,20 @@ export function FediverseComposer({
                   size="small"
                   value={objectType}
                   onValueChange={(value) => setObjectType(value as FediverseObjectType)}
-                  aria-label="Publication type"
+                  aria-label={t("composer.publicationTypeAriaLabel")}
                 >
                   <SegmentedControlItem value="Note" disabled={Boolean(community.trim())}>
-                    Note
+                    {t("composer.typeNote")}
                   </SegmentedControlItem>
-                  <SegmentedControlItem value="Article">Article</SegmentedControlItem>
+                  <SegmentedControlItem value="Article">{t("composer.typeArticle")}</SegmentedControlItem>
                 </SegmentedControl>
               ) : null}
               {!replyTo && !quoteTarget && objectType === "Article" ? (
                 <Input
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Article title"
-                  aria-label="Article title"
+                  placeholder={t("composer.articleTitlePlaceholder")}
+                  aria-label={t("composer.articleTitleAriaLabel")}
                   maxLength={capabilities?.maxTitleCharacters ?? 300}
                 />
               ) : null}
@@ -513,21 +521,21 @@ export function FediverseComposer({
                   size="small"
                   value={contentType}
                   onValueChange={(value) => setContentType(value as FediverseContentType)}
-                  aria-label="Content format"
+                  aria-label={t("composer.contentFormatAriaLabel")}
                 >
                   {availableContentTypes.includes("text/plain") ? (
-                    <SegmentedControlItem value="text/plain">Plain</SegmentedControlItem>
+                    <SegmentedControlItem value="text/plain">{t("composer.contentPlain")}</SegmentedControlItem>
                   ) : null}
                   {availableContentTypes.includes("text/markdown") ? (
-                    <SegmentedControlItem value="text/markdown">Markdown</SegmentedControlItem>
+                    <SegmentedControlItem value="text/markdown">{t("composer.contentMarkdown")}</SegmentedControlItem>
                   ) : null}
                   {availableContentTypes.includes("text/x.misskeymarkdown") ? (
-                    <SegmentedControlItem value="text/x.misskeymarkdown">MFM</SegmentedControlItem>
+                    <SegmentedControlItem value="text/x.misskeymarkdown">{t("composer.contentMFM")}</SegmentedControlItem>
                   ) : null}
                 </SegmentedControl>
               ) : null}
               {cwEnabled ? (
-                <Input value={cw} onChange={(e) => setCw(e.target.value)} placeholder="Content warning" />
+                <Input value={cw} onChange={(e) => setCw(e.target.value)} placeholder={t("composer.cwPlaceholder")} />
               ) : null}
               {!replyTo && !quoteTarget && capabilities?.supportsCommunityTargeting ? (
                 <div className="flex flex-col gap-1.5">
@@ -542,14 +550,13 @@ export function FediverseComposer({
                           setObjectType("Article");
                         }
                       }}
-                      placeholder="Optional community, e.g. !technology@lemmy.world"
-                      aria-label="Community handle"
+                      placeholder={t("composer.communityPlaceholder")}
+                      aria-label={t("composer.communityAriaLabel")}
                     />
                   </div>
                   {community.trim() ? (
                     <Text variant="mini" color="tertiary" className="pl-6">
-                      Ailo verifies this is a Group. FediPod publishes the Article with the community
-                      as its ActivityPub audience and delivers it publicly to the Group inbox.
+                      {t("composer.communityNote")}
                     </Text>
                   ) : null}
                 </div>
@@ -557,14 +564,14 @@ export function FediverseComposer({
               <Textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder={replyTo ? "Write your reply…" : "Share something with the Fediverse…"}
+                placeholder={replyTo ? t("composer.replyPlaceholder") : t("composer.composePlaceholder")}
                 size="large"
                 autoFocus
               />
               <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif,video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,.webm,.webp,.ogv,.mkv"
                 multiple className="hidden" onChange={(event) => addFiles(event.target.files)} />
               {media.length ? (
-                <div className="grid grid-cols-2 gap-2" aria-label="Media attachments">
+                <div className="grid grid-cols-2 gap-2" aria-label={t("composer.mediaAttachmentsAriaLabel")}>
                   {media.map((item) => {
                     const url = item.kind === "local" ? item.previewUrl : item.attachment.url;
                     const isVideo = item.kind === "local" ? item.mimeType.startsWith("video/")
@@ -572,10 +579,10 @@ export function FediverseComposer({
                     return <div key={item.key} className="relative flex flex-col gap-1.5 rounded-control border border-secondary p-2">
                       {isVideo ? <video src={url} className="h-28 w-full rounded object-contain bg-black" muted playsInline controls />
                         : <img src={url} alt="" className="h-28 w-full rounded object-contain bg-black" />}
-                      <Input value={item.description} maxLength={1500} placeholder="Describe this media for accessibility"
-                        aria-label="Media description" onChange={(event) => setMedia((current) => current.map((entry) =>
+                      <Input value={item.description} maxLength={1500} placeholder={t("composer.mediaDescriptionPlaceholder")}
+                        aria-label={t("composer.mediaDescriptionAriaLabel")} onChange={(event) => setMedia((current) => current.map((entry) =>
                           entry.key === item.key ? { ...entry, description: event.target.value } : entry))} />
-                      <Button type="button" size="small" variant="filled" iconOnly aria-label="Remove media"
+                      <Button type="button" size="small" variant="filled" iconOnly aria-label={t("composer.removeMediaAriaLabel")}
                         className="absolute right-3 top-3" onClick={() => removeMedia(item.key)}><X /></Button>
                     </div>;
                   })}
@@ -585,59 +592,59 @@ export function FediverseComposer({
                 <div className="flex flex-col gap-2 rounded-control border border-secondary p-3">
                   <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); if (gifQuery.trim()) gifSearch.mutate(gifQuery.trim()); }}>
                     <Input value={gifQuery} onChange={(event) => setGifQuery(event.target.value)} maxLength={100}
-                      placeholder="Search KLIPY" aria-label="Search KLIPY GIFs" />
-                    <Button type="submit" size="small" variant="accent" disabled={!gifQuery.trim() || gifSearch.isPending}><Search />Search</Button>
+                      placeholder={t("composer.gifSearchPlaceholder")} aria-label={t("composer.gifSearchAriaLabel")} />
+                    <Button type="submit" size="small" variant="accent" disabled={!gifQuery.trim() || gifSearch.isPending}><Search />{t("composer.gifSearchButton")}</Button>
                   </form>
                   {gifSearch.data?.length ? <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto">
                     {gifSearch.data.map((gif) => <button key={gif.id} type="button" disabled={gifImport.isPending || media.length >= 4}
                       className="overflow-hidden rounded-control border border-secondary hover:border-primary disabled:opacity-50"
-                      aria-label={`Add GIF: ${gif.title}`} onClick={() => gifImport.mutate(gif)}>
+                      aria-label={t("composer.gifAddAriaLabel", { title: gif.title })} onClick={() => gifImport.mutate(gif)}>
                       <img src={gif.previewUrl} alt={gif.title} className="h-24 w-full object-cover" loading="lazy" />
                     </button>)}
-                  </div> : gifSearch.isSuccess ? <Text variant="mini" color="tertiary">No GIFs found.</Text> : null}
-                  <Text variant="mini" color="tertiary">GIF search powered by KLIPY.</Text>
+                  </div> : gifSearch.isSuccess ? <Text variant="mini" color="tertiary">{t("composer.gifNone")}</Text> : null}
+                  <Text variant="mini" color="tertiary">{t("composer.gifPoweredBy")}</Text>
                 </div>
               ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button type="button" size="small" variant="filled" disabled={media.length >= 4 || post.isPending}
-                  onClick={() => fileInputRef.current?.click()}><ImagePlus />Photo or video</Button>
+                  onClick={() => fileInputRef.current?.click()}><ImagePlus />{t("composer.addPhotoVideo")}</Button>
                 <Button type="button" size="small" variant="filled" disabled={media.length >= 4 || post.isPending}
-                  onClick={() => setGifOpen((value) => !value)}><Film />GIF</Button>
+                  onClick={() => setGifOpen((value) => !value)}><Film />{t("composer.addGif")}</Button>
                 {gifOpen && aiStatus.data && !aiStatus.data.klipyEnabled ? (
-                  <Text variant="mini" color="tertiary">Add a KLIPY API key in Settings → Provider Keys.</Text>
+                  <Text variant="mini" color="tertiary">{t("composer.gifNeedsKey")}</Text>
                 ) : null}
-                {media.length ? <Text variant="mini" color="tertiary" className="self-center">{media.length} / 4 attachments</Text> : null}
+                {media.length ? <Text variant="mini" color="tertiary" className="self-center">{t("composer.mediaCount", { count: media.length })}</Text> : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <SegmentedControl
                   size="small"
                   value={visibility}
                   onValueChange={(v) => setVisibility(v as FediverseVisibility)}
-                  aria-label="Visibility"
+                  aria-label={t("composer.visibilityAriaLabel")}
                 >
-                  <SegmentedControlItem value="public">Public</SegmentedControlItem>
+                  <SegmentedControlItem value="public">{t("composer.visibilityPublic")}</SegmentedControlItem>
                   <SegmentedControlItem value="unlisted" disabled={Boolean(community.trim())}>
-                    Unlisted
+                    {t("composer.visibilityUnlisted")}
                   </SegmentedControlItem>
                   <SegmentedControlItem value="private" disabled={Boolean(community.trim())}>
-                    Followers
+                    {t("composer.visibilityFollowers")}
                   </SegmentedControlItem>
                 </SegmentedControl>
                 {!replyTo ? (
                   <select
                     value={quotePolicy}
                     onChange={(event) => setQuotePolicy(event.target.value as MastodonQuotePolicy)}
-                    aria-label="Who may quote this post"
+                    aria-label={t("composer.quoteApprovalAriaLabel")}
                     className="rounded-control border border-secondary bg-control-subtle px-2 py-1 text-sm"
                   >
-                    <option value="public">Quotes: anyone</option>
-                    <option value="followers">Quotes: followers</option>
-                    <option value="nobody">Quotes: nobody</option>
+                    <option value="public">{t("composer.quotesAnyone")}</option>
+                    <option value="followers">{t("composer.quotesFollowers")}</option>
+                    <option value="nobody">{t("composer.quotesNobody")}</option>
                   </select>
                 ) : null}
                 <Label className="ml-1 gap-2">
-                  <Switch checked={cwEnabled} onCheckedChange={setCwEnabled} aria-label="Content warning" />
-                  CW
+                  <Switch checked={cwEnabled} onCheckedChange={setCwEnabled} aria-label={t("composer.cwAriaLabel")} />
+                  {t("composer.cwLabel")}
                 </Label>
               </div>
             </div>
@@ -651,7 +658,7 @@ export function FediverseComposer({
         {mode === "compose" ? (
           <DialogFooter>
             <Button variant="filled" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               variant="accent"
@@ -659,7 +666,7 @@ export function FediverseComposer({
               onClick={() => post.mutate()}
             >
               <Send />
-              {replyTo ? "Reply" : quoteTarget ? "Quote" : community.trim() ? "Post to community" : "Post"}
+              {replyTo ? t("composer.titleReply") : quoteTarget ? t("composer.titleQuote") : community.trim() ? t("composer.postToCommunity") : t("composer.postButton")}
             </Button>
           </DialogFooter>
         ) : null}

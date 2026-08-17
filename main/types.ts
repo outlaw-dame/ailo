@@ -29,6 +29,10 @@ export interface Post {
 export interface Profile {
   displayName: string;
   bio: string;
+  /** URL of the user's avatar / profile picture */
+  avatarUrl: string;
+  /** URL of the user's banner / header image */
+  bannerUrl: string;
   /** Cal.com username or full booking path, e.g. "jane" or "jane/30min" */
   calComPath: string;
   /** Preferred Solid OIDC issuer, e.g. https://login.inrupt.com */
@@ -69,6 +73,8 @@ export interface SolidSessionSnapshot {
 export const DEFAULT_PROFILE: Profile = {
   displayName: "",
   bio: "",
+  avatarUrl: "",
+  bannerUrl: "",
   calComPath: "",
   solidIssuer: "https://login.inrupt.com",
   solidPodRoot: "",

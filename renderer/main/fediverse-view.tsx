@@ -2,6 +2,7 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { AtSign, Bell, Compass, Hash, Home, RefreshCw, Sparkles } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   Button,
   EmptyState,
@@ -25,21 +26,6 @@ import { useFediverseComposerState } from "../lib/use-fediverse-composer";
 
 type Tab = "for-you" | "home" | "tag-feed" | "notifications" | "discover" | "tags";
 
-const NOTIFICATION_LABEL: Record<string, string> = {
-  mention: "mentioned you",
-  reblog: "boosted your story",
-  favourite: "favourited your story",
-  follow: "followed you",
-  follow_request: "requested to follow you",
-  poll: "ran a poll that ended",
-  status: "posted",
-  update: "edited a post",
-  quote: "quoted your post",
-  quoted_update: "updated a quote of your post",
-  added_to_collection: "added you to a collection",
-  collection_update: "updated a collection featuring you",
-};
-
 function FeedSkeleton() {
   return (
     <div className="flex flex-col gap-3">
@@ -51,17 +37,19 @@ function FeedSkeleton() {
 }
 
 function ErrorNote({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-secondary px-4 py-6 text-center">
       <Text color="secondary">{message}</Text>
       <Button size="small" variant="filled" onClick={onRetry}>
-        Try again
+        {t("common.retry")}
       </Button>
     </div>
   );
 }
 
 export function FediverseView() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -83,9 +71,6 @@ export function FediverseView() {
     queryKey: ["fedipod", "capabilities"],
     queryFn: () => api.fedipod.capabilities(),
     enabled: connected,
-    // Re-prove the running daemon's contract instead of trusting a successful
-    // check forever; this catches an old process or rollback while Ailo stays
-    // open and pauses dependent feeds until compatibility is restored.
     refetchInterval: 60_000,
     refetchOnWindowFocus: "always",
   });
@@ -126,7 +111,7 @@ export function FediverseView() {
         api.fedipod.filters(),
       ]);
       await semanticFilterService.apply(
-        notifications.flatMap((notification) => notification.status ? [notification.status] : []),
+        notifications.flatMap((n) => n.status ? [n.status] : []),
         filters,
         "notifications",
       );
@@ -150,7 +135,8 @@ export function FediverseView() {
       return [...unique.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     },
     enabled: fedipodReady && tab === "for-you" && aiStatusQuery.data?.enabled === true,
-    refetchInterval: 60_000, refetchOnWindowFocus: "always",
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: "always",
   });
 
   const refresh = () => {
@@ -184,8 +170,6 @@ export function FediverseView() {
     setTab("tag-feed");
   }, []);
 
-  // Hide the floating compose button while the feed is actively scrolling and
-  // bring it back once scrolling settles.
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
   const [feedIdle, setFeedIdle] = React.useState(true);
 
@@ -208,19 +192,19 @@ export function FediverseView() {
   if (!connected) {
     return (
       <ScrollArea
-        title="Fediverse"
-        subtitle="Share knowledge across the open social web"
+        title={t("fediverse.title")}
+        subtitle={t("fediverse.subtitleDisconnected")}
         className="h-full"
       >
         <div className="relative flex min-h-[calc(100%-1px)] flex-col">
           <div className="knot-mesh-2 pointer-events-none absolute inset-x-6 top-4 h-56 rounded-card opacity-70" />
           <EmptyState
-            title="Connect your FediPod"
-            description="FediPod is your personal ActivityPub agent backed by a Solid Pod. Connect it in the You tab to read your home timeline and share stories across Mastodon and the wider Fediverse."
+            title={t("fediverse.connectTitle")}
+            description={t("fediverse.connectDescription")}
             actions={
               <Button variant="accent" onClick={() => void navigate({ to: "/profile" })}>
                 <AtSign />
-                Connect in You
+                {t("fediverse.connectAction")}
               </Button>
             }
           />
@@ -239,8 +223,8 @@ export function FediverseView() {
     <div className="relative h-full">
       <ScrollArea
         ref={viewportRef}
-        title="Fediverse"
-        subtitle={account ? `@${account.acct || account.username}` : "Your home timeline"}
+        title={t("fediverse.title")}
+        subtitle={account ? `@${account.acct || account.username}` : t("fediverse.subtitleConnected")}
         actions={
           <div className="flex items-center gap-1.5">
             <SegmentedControl
@@ -250,27 +234,31 @@ export function FediverseView() {
                 setSelectedTag(null);
                 setTab(v as Tab);
               }}
-              aria-label="Fediverse tab"
+              aria-label={t("fediverse.tabAriaLabel")}
             >
-              {aiStatusQuery.data?.enabled ? <SegmentedControlItem value="for-you"><Sparkles />For You</SegmentedControlItem> : null}
+              {aiStatusQuery.data?.enabled ? (
+                <SegmentedControlItem value="for-you">
+                  <Sparkles />{t("fediverse.tabForYou")}
+                </SegmentedControlItem>
+              ) : null}
               <SegmentedControlItem value="home">
                 <Home />
-                Home
+                {t("fediverse.tabHome")}
               </SegmentedControlItem>
               <SegmentedControlItem value="notifications">
                 <Bell />
-                Alerts
+                {t("fediverse.tabAlerts")}
               </SegmentedControlItem>
               <SegmentedControlItem value="discover">
                 <Compass />
-                Discover
+                {t("fediverse.tabDiscover")}
               </SegmentedControlItem>
               <SegmentedControlItem value="tags">
                 <Hash />
-                Tags
+                {t("fediverse.tabTags")}
               </SegmentedControlItem>
             </SegmentedControl>
-            <Button size="small" variant="filled" iconOnly aria-label="Refresh" onClick={refresh}>
+            <Button size="small" variant="filled" iconOnly aria-label={t("fediverse.refreshAriaLabel")} onClick={refresh}>
               <RefreshCw />
             </Button>
           </div>
@@ -287,8 +275,28 @@ export function FediverseView() {
             />
           ) : tab === "for-you" ? (
             <div className="flex flex-col gap-3">
-              <div className="rounded-card border border-secondary bg-control-subtle p-3"><Text variant="small-strong">Private personalization</Text><Text variant="small" color="tertiary">Built from your custom-feed rules and matched on this device. Fediverse post text is not sent to {aiStatusQuery.data?.defaultProvider === "gemini" ? "Gemini" : "OpenAI"}.</Text><Button size="small" variant="transparent" className="mt-2" onClick={() => void navigate({ to: "/feeds" })}>Tune feeds</Button></div>
-              {forYouQuery.isLoading ? <FeedSkeleton /> : forYouQuery.isError ? <ErrorNote message={(forYouQuery.error as Error).message} onRetry={() => void forYouQuery.refetch()} /> : forYouQuery.data?.length ? forYouQuery.data.map((status) => <StatusCard key={status.id} status={status} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />) : <Text color="tertiary" className="px-1 py-8 text-center">Create a custom feed to teach For You what belongs here.</Text>}
+              <div className="rounded-card border border-secondary bg-control-subtle p-3">
+                <Text variant="small-strong">{t("fediverse.forYouPrivacyTitle")}</Text>
+                <Text variant="small" color="tertiary">
+                  {aiStatusQuery.data?.defaultProvider === "gemini"
+                    ? t("fediverse.forYouPrivacyGemini")
+                    : t("fediverse.forYouPrivacyOpenAI")}
+                </Text>
+                <Button size="small" variant="transparent" className="mt-2" onClick={() => void navigate({ to: "/feeds" })}>
+                  {t("fediverse.forYouTuneFeeds")}
+                </Button>
+              </div>
+              {forYouQuery.isLoading ? (
+                <FeedSkeleton />
+              ) : forYouQuery.isError ? (
+                <ErrorNote message={(forYouQuery.error as Error).message} onRetry={() => void forYouQuery.refetch()} />
+              ) : forYouQuery.data?.length ? (
+                forYouQuery.data.map((status) => (
+                  <StatusCard key={status.id} status={status} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />
+                ))
+              ) : (
+                <Text color="tertiary" className="px-1 py-8 text-center">{t("fediverse.forYouEmpty")}</Text>
+              )}
             </div>
           ) : tab === "home" ? (
             timelineQuery.isLoading ? (
@@ -297,7 +305,7 @@ export function FediverseView() {
               <ErrorNote message={(timelineQuery.error as Error).message} onRetry={refresh} />
             ) : timeline.length === 0 ? (
               <Text color="tertiary" className="px-1 py-8 text-center">
-                Your home timeline is quiet. Follow people or join communities to see posts here.
+                {t("fediverse.homeEmpty")}
               </Text>
             ) : (
               <div className="flex flex-col gap-3">
@@ -313,7 +321,7 @@ export function FediverseView() {
                   setSelectedTag(null);
                   setTab("home");
                 }}>
-                  Back
+                  {t("common.back")}
                 </Button>
                 <Hash className="size-4" />
                 <Text variant="strong">#{selectedTag}</Text>
@@ -324,7 +332,7 @@ export function FediverseView() {
                 <ErrorNote message={(tagTimelineQuery.error as Error).message} onRetry={refresh} />
               ) : tagTimeline.length === 0 ? (
                 <Text color="tertiary" className="px-1 py-8 text-center">
-                  No posts for #{selectedTag} have reached this FediPod yet.
+                  {t("fediverse.tagFeedEmpty", { tag: selectedTag })}
                 </Text>
               ) : (
                 tagTimeline.map((s) => (
@@ -339,7 +347,7 @@ export function FediverseView() {
               <ErrorNote message={(notificationsQuery.error as Error).message} onRetry={refresh} />
             ) : notifications.length === 0 ? (
               <Text color="tertiary" className="px-1 py-8 text-center">
-                No notifications yet.
+                {t("fediverse.notificationsEmpty")}
               </Text>
             ) : (
               <div className="flex flex-col gap-3">
@@ -356,7 +364,7 @@ export function FediverseView() {
                           {n.account.displayName}
                         </Text>{" "}
                         <Text as="span" color="tertiary">
-                          {NOTIFICATION_LABEL[n.type] ?? n.type}
+                          {t(`fediverse.notificationLabel.${n.type}`, { defaultValue: n.type })}
                         </Text>
                       </Text>
                       <Text variant="mini" color="quaternary" className="shrink-0 tabular-nums">

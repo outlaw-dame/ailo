@@ -1,11 +1,13 @@
 import { Outlet } from "@tanstack/react-router";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { SplitView, Status } from "@glaze/core/components";
 import { useTheme, useConnection, useEnvironment } from "@glaze/core/hooks";
 
 import { AppSidebar } from "../components/app-sidebar";
 
 export function RootView() {
+  const { t } = useTranslation();
   useTheme();
 
   const connectionQuery = useConnection();
@@ -33,8 +35,8 @@ export function RootView() {
       <div className="flex flex-col items-end gap-1 mt-2 fixed bottom-12 right-2">
         {import.meta.env.DEV ? (
           <>
-            {connectionQuery.error ? <Status variant="error">Backend disconnected</Status> : null}
-            {environmentQuery.data ? null : <Status variant="error">Dev Server not found</Status>}
+            {connectionQuery.error ? <Status variant="error">{t("errors.backendDisconnected")}</Status> : null}
+            {environmentQuery.data ? null : <Status variant="error">{t("errors.devServerNotFound")}</Status>}
           </>
         ) : null}
       </div>

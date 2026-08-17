@@ -2,12 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { PenLine } from "lucide-react";
 import { Button, EmptyState, ScrollArea, Text } from "@glaze/core/components";
+import { useTranslation } from "react-i18next";
 
 import { PostCard } from "../components/post-card";
 import { StoryCover } from "../components/story-cover";
 import { api } from "../lib/api";
 
 export function FeedView() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const postsQuery = useQuery({
     queryKey: ["posts"],
@@ -24,13 +26,13 @@ export function FeedView() {
 
   return (
     <ScrollArea
-      title="Stories"
+      title={t("stories.title")}
       subtitle={
         postsQuery.isLoading
-          ? "Loading…"
+          ? t("stories.subtitleLoading")
           : posts.length === 0
-            ? "A tiny paper for shared knowledge"
-            : `${posts.length} ${posts.length === 1 ? "story" : "stories"}`
+            ? t("stories.subtitleEmpty")
+            : t("stories.subtitleCount", { count: posts.length })
       }
       actions={
         <Button
@@ -41,7 +43,7 @@ export function FeedView() {
           }}
         >
           <PenLine />
-          Compose
+          {t("stories.compose")}
         </Button>
       }
       className="h-full"
@@ -56,8 +58,8 @@ export function FeedView() {
         <div className="relative flex min-h-[calc(100%-1px)] flex-col">
           <div className="knot-mesh-0 pointer-events-none absolute inset-x-6 top-4 h-56 rounded-card opacity-70" />
           <EmptyState
-            title="Start a tiny paper"
-            description="Write one honest note. Markdown, HTML, and emoji welcome — publish to your Solid Pod and GitHub when you're ready to share."
+            title={t("stories.emptyTitle")}
+            description={t("stories.emptyDescription")}
             actions={
               <Button
                 variant="accent"
@@ -66,7 +68,7 @@ export function FeedView() {
                 }}
               >
                 <PenLine />
-                Compose the first story
+                {t("stories.emptyAction")}
               </Button>
             }
           />
@@ -76,7 +78,7 @@ export function FeedView() {
           {cover ? (
             <section className="flex flex-col gap-3">
               <Text variant="small-strong" color="tertiary" className="px-0.5 tracking-wide uppercase">
-                Today
+                {t("stories.sectionToday")}
               </Text>
               <StoryCover post={cover} />
             </section>
@@ -86,7 +88,7 @@ export function FeedView() {
             <section className="flex flex-col gap-3">
               <div className="flex items-baseline justify-between gap-3 px-0.5">
                 <Text variant="small-strong" color="tertiary" className="tracking-wide uppercase">
-                  More stories
+                  {t("stories.sectionMore")}
                 </Text>
                 <Text variant="mini" color="quaternary" className="tabular-nums">
                   {restPublished.length}
@@ -104,10 +106,10 @@ export function FeedView() {
             <section className="flex flex-col gap-3">
               <div className="flex items-baseline justify-between gap-3 px-0.5">
                 <Text variant="small-strong" color="tertiary" className="tracking-wide uppercase">
-                  On the desk
+                  {t("stories.sectionDrafts")}
                 </Text>
                 <Text variant="mini" color="quaternary" className="tabular-nums">
-                  {restDrafts.length} draft{restDrafts.length === 1 ? "" : "s"}
+                  {t("stories.draftCount", { count: restDrafts.length })}
                 </Text>
               </div>
               <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">

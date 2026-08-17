@@ -1,54 +1,13 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { Badge, Button, Field, Input, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
 import { actionableError } from "../lib/actionable-error";
 import type { ProviderCredential } from "../lib/types";
 
-const PROVIDERS: Array<{
-  id: ProviderCredential;
-  label: string;
-  description: string;
-  placeholder: string;
-}> = [
-  {
-    id: "openai",
-    label: "OpenAI / ChatGPT",
-    description: "Used for ChatGPT writing assistance and optional remote semantic filters.",
-    placeholder: "Paste an OpenAI API key",
-  },
-  {
-    id: "gemini",
-    label: "Google Gemini",
-    description: "Used for Gemini writing assistance and optional Gemini embeddings.",
-    placeholder: "Paste a Gemini API key",
-  },
-  {
-    id: "safe_browsing",
-    label: "Google Safe Browsing",
-    description: "Checks a link with Google only after you choose to open it.",
-    placeholder: "Paste a Google Safe Browsing API key",
-  },
-  {
-    id: "klipy",
-    label: "KLIPY GIFs",
-    description: "Searches KLIPY from FediPod; the key is never exposed to Ailo's renderer.",
-    placeholder: "Paste a KLIPY API key",
-  },
-  {
-    id: "deepl",
-    label: "DeepL Translate",
-    description: "Translates posts with DeepL Free or Pro. Free keys ending in :fx are detected automatically.",
-    placeholder: "Paste a DeepL API authentication key",
-  },
-  {
-    id: "libretranslate",
-    label: "LibreTranslate",
-    description: "Optional for self-hosted servers; required by managed servers that enforce API keys.",
-    placeholder: "Paste a LibreTranslate API key",
-  },
-];
+const PROVIDER_IDS: ProviderCredential[] = ["openai", "gemini", "safe_browsing", "klipy", "deepl", "libretranslate"];
 
 const EMPTY_KEYS: Record<ProviderCredential, string> = {
   openai: "",
@@ -60,6 +19,13 @@ const EMPTY_KEYS: Record<ProviderCredential, string> = {
 };
 
 export function ProviderCredentials() {
+  const { t } = useTranslation();
+  const PROVIDERS = React.useMemo(() => PROVIDER_IDS.map((id) => ({
+    id,
+    label: t(`providerCredentials.${id}.label`),
+    description: t(`providerCredentials.${id}.description`),
+    placeholder: t(`providerCredentials.${id}.placeholder`),
+  })), [t]);
   const queryClient = useQueryClient();
   const [keys, setKeys] = React.useState(EMPTY_KEYS);
   const credentials = useQuery({
@@ -80,38 +46,40 @@ export function ProviderCredentials() {
     onSuccess: async (_result, variables) => {
       setKeys((current) => ({ ...current, [variables.provider]: "" }));
       await refresh();
-      toast.success("API key saved securely in FediPod");
+      toast.success(t("providerCredentials.saveSuccess"));
     },
-    onError: (error: Error) => toast.error(actionableError(error, "Could not save API key")),
+    onError: (error: Error) => toast.error(actionableError(error, t("providerCredentials.saveError"))),
   });
   const remove = useMutation({
     mutationFn: api.ai.removeCredential,
     onSuccess: async () => {
       await refresh();
-      toast.success("Saved API key removed");
+      toast.success(t("providerCredentials.removeSuccess"));
     },
-    onError: (error: Error) => toast.error(actionableError(error, "Could not remove API key")),
+    onError: (error: Error) => toast.error(actionableError(error, t("providerCredentials.removeError"))),
   });
   const testCredential = useMutation({
     mutationFn: ({ provider, apiKey }: { provider: ProviderCredential; apiKey?: string }) =>
       api.ai.testCredential(provider, apiKey),
     onSuccess: (result) => toast.success(
-      `${PROVIDERS.find((provider) => provider.id === result.provider)?.label || "Provider"} key works`,
+      t("providerCredentials.testSuccess", {
+        label: PROVIDERS.find((provider) => provider.id === result.provider)?.label
+          || t("providerCredentials.unknownProviderLabel"),
+      }),
     ),
-    onError: (error: Error) => toast.error(actionableError(error, "Credential test failed")),
+    onError: (error: Error) => toast.error(actionableError(error, t("providerCredentials.testError"))),
   });
 
   return (
     <div className="flex flex-col gap-3 rounded-control border border-secondary px-3 py-3">
       <div className="flex flex-col gap-1">
-        <Text variant="small-strong">Provider API keys</Text>
+        <Text variant="small-strong">{t("providerCredentials.title")}</Text>
         <Text variant="mini" color="tertiary">
-          Keys are saved only in this FediPod identity's owner-only local file. They are never
-          copied to your Solid Pod, published to the Fediverse, or returned to Ailo after saving.
+          {t("providerCredentials.description")}
         </Text>
       </div>
       {credentials.isError ? (
-        <Text variant="mini" color="danger">{actionableError(credentials.error, "Could not load provider keys")}</Text>
+        <Text variant="mini" color="danger">{actionableError(credentials.error, t("providerCredentials.loadError"))}</Text>
       ) : null}
       {PROVIDERS.map((provider) => {
         const state = credentials.data?.[provider.id];
@@ -124,10 +92,10 @@ export function ProviderCredentials() {
             <div className="flex items-center justify-between gap-2">
               <Text variant="small-strong">{provider.label}</Text>
               {state?.configured ? (
-                <Badge color="green">{state.source === "local" ? "Saved locally" : "From environment"}</Badge>
-              ) : <Badge>Not configured</Badge>}
+                <Badge color="green">{state.source === "local" ? t("providerCredentials.savedLocally") : t("providerCredentials.fromEnvironment")}</Badge>
+              ) : <Badge>{t("translation.notConfigured")}</Badge>}
             </div>
-            <Field label="API key" description={provider.description} orientation="vertical">
+            <Field label={t("providerCredentials.apiKeyLabel")} description={provider.description} orientation="vertical">
               <Input
                 type="password"
                 autoComplete="off"
@@ -137,29 +105,29 @@ export function ProviderCredentials() {
                   ...current,
                   [provider.id]: event.target.value,
                 }))}
-                placeholder={state?.configured ? "Enter a replacement key" : provider.placeholder}
+                placeholder={state?.configured ? t("providerCredentials.replacePlaceholder") : provider.placeholder}
               />
             </Field>
             <div className="flex flex-wrap gap-2">
               <Button size="small" variant="accent" disabled={busy || !candidate.trim()}
                 onClick={() => save.mutate({ provider: provider.id, apiKey: candidate })}>
-                {state?.configured ? "Replace key" : "Save key"}
+                {state?.configured ? t("providerCredentials.replaceButton") : t("providerCredentials.saveButton")}
               </Button>
               <Button size="small" variant="filled" disabled={busy || (!candidate.trim() && !state?.configured)}
                 onClick={() => testCredential.mutate({
                   provider: provider.id,
                   apiKey: candidate.trim() || undefined,
                 })}>
-                {candidate.trim() ? "Test entered key" : "Test saved key"}
+                {candidate.trim() ? t("providerCredentials.testEnteredButton") : t("providerCredentials.testSavedButton")}
               </Button>
               {state?.source === "local" ? (
                 <Button size="small" variant="transparent" disabled={busy}
                   onClick={() => {
-                    if (window.confirm(`Remove the saved ${provider.label} key from FediPod?`)) {
+                    if (window.confirm(t("providerCredentials.removeConfirm", { label: provider.label }))) {
                       remove.mutate(provider.id);
                     }
                   }}>
-                  Remove saved key
+                  {t("providerCredentials.removeButton")}
                 </Button>
               ) : null}
             </div>
@@ -167,9 +135,7 @@ export function ProviderCredentials() {
         );
       })}
       <Text variant="mini" color="quaternary">
-        Safe Browsing is an advisory service and may have false positives or negatives. Google
-        receives the full URL only when you request a check; review Google's terms before use,
-        especially for commercial products.
+        {t("providerCredentials.safeBrowsingDisclaimer")}
       </Text>
     </div>
   );

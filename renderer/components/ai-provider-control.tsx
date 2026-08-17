@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { SegmentedControl, SegmentedControlItem } from "@glaze/core/components";
 
 import type { AiProvider, AiStatus } from "../lib/types";
@@ -29,16 +30,17 @@ export function AiProviderControl({
   provider: AiProvider | null;
   onChange: (provider: AiProvider) => void;
 }) {
+  const { t } = useTranslation();
   if (!provider || !status || status.providers.length < 2) return null;
   return (
     <SegmentedControl
       size="small"
       value={provider}
       onValueChange={(value) => onChange(value as AiProvider)}
-      aria-label="AI provider"
+      aria-label={t("aiProvider.ariaLabel")}
     >
-      {status.providers.includes("openai") ? <SegmentedControlItem value="openai">ChatGPT</SegmentedControlItem> : null}
-      {status.providers.includes("gemini") ? <SegmentedControlItem value="gemini">Gemini</SegmentedControlItem> : null}
+      {status.providers.includes("openai") ? <SegmentedControlItem value="openai">{t("aiProvider.chatgpt")}</SegmentedControlItem> : null}
+      {status.providers.includes("gemini") ? <SegmentedControlItem value="gemini">{t("aiProvider.gemini")}</SegmentedControlItem> : null}
     </SegmentedControl>
   );
 }

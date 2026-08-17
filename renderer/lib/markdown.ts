@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 
+import i18n from "./i18n";
 import { renderMfm } from "./mfm";
 import type { ImageAltText, MastodonStatus } from "./types";
 
@@ -100,12 +101,12 @@ export function formatRelativeDate(iso: string): string {
   if (Number.isNaN(date.getTime())) return "";
   const diffMs = Date.now() - date.getTime();
   const minutes = Math.round(diffMs / 60_000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return i18n.t("time.justNow");
+  if (minutes < 60) return i18n.t("time.minutesAgo", { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return i18n.t("time.hoursAgo", { count: hours });
   const days = Math.round(hours / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < 7) return i18n.t("time.daysAgo", { count: days });
   return date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",

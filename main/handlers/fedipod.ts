@@ -164,6 +164,13 @@ export function registerFediPodHandlers(): void {
     return { connected: false };
   });
 
+  ipcMain.handle("fedipod:getStatus", async (_event, id: unknown) => {
+    return fediPodService.fetchStatus(requireString(id, "Status id"));
+  });
+
+  ipcMain.handle("fedipod:statusContext", async (_event, id: unknown) => {
+    return fediPodService.fetchStatusContext(requireString(id, "Status id"));
+  });
   ipcMain.handle("fedipod:timeline", async (_event, options: unknown) => {
     const opts =
       typeof options === "object" && options !== null ? (options as Record<string, unknown>) : {};

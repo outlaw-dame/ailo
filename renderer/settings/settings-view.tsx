@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Languages, Palette, ShieldCheck, UserCog, WandSparkles } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   Badge,
   Button,
@@ -27,53 +28,69 @@ import { ProviderCredentials } from "../components/provider-credentials";
 import { api } from "../lib/api";
 import type { TranslationProvider } from "../lib/types";
 import { actionableError } from "../lib/actionable-error";
+import { languageName } from "../lib/translation";
 import { AccountSettings } from "../main/profile-view";
 import { FeedsSettings } from "./settings-feeds";
 import { ModerationSettings } from "./settings-moderation";
 
 type SettingsPage = "accounts" | "appearance" | "feeds" | "moderation" | "providers" | "translation";
 
-const PAGES: Array<{ id: SettingsPage; label: string; icon: React.ReactNode }> = [
-  { id: "accounts", label: "Accounts", icon: <UserCog /> },
-  { id: "appearance", label: "Appearance", icon: <Palette /> },
-  { id: "feeds", label: "Feeds", icon: <WandSparkles /> },
-  { id: "moderation", label: "Safety", icon: <ShieldCheck /> },
-  { id: "providers", label: "Provider Keys", icon: <KeyRound /> },
-  { id: "translation", label: "Translation", icon: <Languages /> },
-];
+// Display labels come from t(`settingsNav.${id}`) at render time — this
+// array is just the id/icon pairing and iteration order.
+const PAGE_IDS: SettingsPage[] = ["accounts", "appearance", "feeds", "moderation", "providers", "translation"];
+const PAGE_ICONS: Record<SettingsPage, React.ReactNode> = {
+  accounts: <UserCog />,
+  appearance: <Palette />,
+  feeds: <WandSparkles />,
+  moderation: <ShieldCheck />,
+  providers: <KeyRound />,
+  translation: <Languages />,
+};
+// settingsNav.safety is the label for the "moderation" page id — the page
+// was renamed to "Safety" in the UI without renaming its internal id.
+const PAGE_LABEL_KEY: Record<SettingsPage, string> = {
+  accounts: "settingsNav.accounts",
+  appearance: "settingsNav.appearance",
+  feeds: "settingsNav.feeds",
+  moderation: "settingsNav.safety",
+  providers: "settingsNav.providerKeys",
+  translation: "settingsNav.translation",
+};
 
-const TARGET_LANGUAGES = [
-  ["en", "English"], ["es", "Spanish"], ["fr", "French"], ["de", "German"],
-  ["it", "Italian"], ["pt", "Portuguese"], ["nl", "Dutch"], ["pl", "Polish"],
-  ["ru", "Russian"], ["ja", "Japanese"], ["ko", "Korean"], ["zh", "Chinese"],
-] as const;
+// Language names are locale data, not UI copy — derived from Intl.DisplayNames
+// via languageName() rather than hardcoded, so they follow the reader's own
+// locale instead of needing a translated copy per supported UI language.
+const TARGET_LANGUAGE_CODES = ["en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "ja", "ko", "zh"] as const;
 
-const TRANSLATORS: Array<{ id: "auto" | TranslationProvider; label: string; note: string }> = [
-  { id: "auto", label: "Automatic", note: "Use the first configured translation provider." },
-  { id: "deepl", label: "DeepL", note: "Dedicated commercial translation service." },
-  { id: "libretranslate", label: "LibreTranslate", note: "Open-source managed or self-hosted translation." },
-  { id: "openai", label: "OpenAI", note: "Use the configured OpenAI model for translation." },
-  { id: "gemini", label: "Gemini", note: "Use the configured Gemini model for translation." },
-];
+const TRANSLATOR_IDS: Array<"auto" | TranslationProvider> = ["auto", "deepl", "libretranslate", "openai", "gemini"];
+const TRANSLATOR_LABEL_KEY: Record<string, string> = {
+  auto: "translation.auto", deepl: "translation.deepl",
+  libretranslate: "translation.libretranslate", openai: "translation.openai", gemini: "translation.gemini",
+};
+const TRANSLATOR_NOTE_KEY: Record<string, string> = {
+  auto: "translation.autoNote", deepl: "translation.deeplNote",
+  libretranslate: "translation.libretranslateNote", openai: "translation.openaiNote", gemini: "translation.geminiNote",
+};
 
 function AppearanceSettings() {
+  const { t } = useTranslation();
   const [themeInfo, setThemeInfo] = React.useState<NativeThemeInfo | null>(null);
   const refresh = React.useCallback(async () => setThemeInfo(await window.glazeAPI.nativeTheme.getInfo()), []);
-  React.useEffect(() => { void refresh().catch((error) => toast.error(`Failed to get theme info: ${error}`)); }, [refresh]);
+  React.useEffect(() => { void refresh().catch((error) => toast.error(t("appearance.themeInfoError", { error }))); }, [refresh, t]);
   const changeTheme = async (value: string) => {
     try {
       await window.glazeAPI.nativeTheme.setThemeSource(value as "system" | "light" | "dark");
       await refresh();
-    } catch (error) { toast.error(`Failed to set theme: ${error}`); }
+    } catch (error) { toast.error(t("appearance.themeSetError", { error })); }
   };
   return <FieldSet>
     <FieldGroup>
       <Field orientation="horizontal">
-        <FieldContent><FieldLabel htmlFor="theme">Theme</FieldLabel></FieldContent>
+        <FieldContent><FieldLabel htmlFor="theme">{t("appearance.themeLabel")}</FieldLabel></FieldContent>
         <RadioGroup value={themeInfo?.themeSource ?? "system"} onValueChange={changeTheme} orientation="horizontal">
-          <Label><RadioGroupItem value="system" />Auto</Label>
-          <Label><RadioGroupItem value="light" />Light</Label>
-          <Label><RadioGroupItem value="dark" />Dark</Label>
+          <Label><RadioGroupItem value="system" />{t("appearance.themeAuto")}</Label>
+          <Label><RadioGroupItem value="light" />{t("appearance.themeLight")}</Label>
+          <Label><RadioGroupItem value="dark" />{t("appearance.themeDark")}</Label>
         </RadioGroup>
       </Field>
     </FieldGroup>
@@ -81,6 +98,7 @@ function AppearanceSettings() {
 }
 
 function TranslationSettingsPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: ["fedipod", "translation-settings"], queryFn: api.ai.translationSettings });
   const [provider, setProvider] = React.useState<"auto" | TranslationProvider>("auto");
@@ -106,76 +124,77 @@ function TranslationSettingsPage() {
         queryClient.invalidateQueries({ queryKey: ["fedipod", "translation-settings"] }),
         queryClient.invalidateQueries({ queryKey: ["fedipod", "ai", "status"] }),
       ]);
-      toast.success("Translation settings saved");
+      toast.success(t("translation.saveSuccess"));
     },
-    onError: (error: Error) => toast.error(actionableError(error, "Could not save translation settings")),
+    onError: (error: Error) => toast.error(actionableError(error, t("translation.saveError"))),
   });
   const configured = new Set(settings.data?.configuredProviders ?? []);
   return <div className="flex flex-col gap-5">
     <div className="flex flex-col gap-1">
-      <Text variant="strong">Translation provider</Text>
-      <Text variant="small" color="tertiary">Choose which backend translates Fediverse posts.</Text>
+      <Text variant="strong">{t("translation.providerTitle")}</Text>
+      <Text variant="small" color="tertiary">{t("translation.providerDescription")}</Text>
     </div>
     <RadioGroup value={provider} onValueChange={(value) => setProvider(value as "auto" | TranslationProvider)}>
-      {TRANSLATORS.map((translator) => <Label key={translator.id}
+      {TRANSLATOR_IDS.map((id) => <Label key={id}
         className="flex items-start gap-3 rounded-control border border-secondary px-3 py-2.5">
-        <RadioGroupItem value={translator.id} />
+        <RadioGroupItem value={id} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex items-center gap-2">
-            <Text variant="small-strong">{translator.label}</Text>
-            {translator.id !== "auto" ? <Badge color={configured.has(translator.id) ? "green" : undefined}>
-              {configured.has(translator.id) ? "Ready" : "Not configured"}
+            <Text variant="small-strong">{t(TRANSLATOR_LABEL_KEY[id])}</Text>
+            {id !== "auto" ? <Badge color={configured.has(id) ? "green" : undefined}>
+              {configured.has(id) ? t("translation.ready") : t("translation.notConfigured")}
             </Badge> : null}
           </span>
-          <Text variant="mini" color="tertiary">{translator.note}</Text>
+          <Text variant="mini" color="tertiary">{t(TRANSLATOR_NOTE_KEY[id])}</Text>
         </span>
       </Label>)}
     </RadioGroup>
-    <Field label="LibreTranslate server URL"
-      description="Use HTTPS for remote servers. HTTP is accepted only for localhost self-hosting."
+    <Field label={t("translation.libreUrlLabel")}
+      description={t("translation.libreUrlDescription")}
       orientation="vertical">
       <Input value={libreUrl} onChange={(event) => setLibreUrl(event.target.value)}
-        placeholder="https://libretranslate.com" spellCheck={false} />
+        placeholder={t("translation.libreUrlPlaceholder")} spellCheck={false} />
     </Field>
-    <Field label="Translate posts to" description="Used by both the Translate button and auto-translation."
+    <Field label={t("translation.targetLanguageLabel")} description={t("translation.targetLanguageDescription")}
       orientation="vertical">
       <select className="h-8 w-full rounded-control border border-field bg-transparent px-2 text-regular text-primary"
         value={targetLanguage} onChange={(event) => setTargetLanguage(event.target.value)}>
-        {TARGET_LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+        {TARGET_LANGUAGE_CODES.map((code) => <option key={code} value={code}>{languageName(code) ?? code}</option>)}
       </select>
     </Field>
     <div className="flex items-start justify-between gap-4 rounded-control border border-secondary px-3 py-3">
       <div className="min-w-0">
-        <Text variant="small-strong">Auto inline translation</Text>
+        <Text variant="small-strong">{t("translation.autoTranslateTitle")}</Text>
         <Text variant="mini" color="tertiary">
-          Automatically show translations for short timeline posts without a content warning, sensitive media, attachments, article preview, or filters.
+          {t("translation.autoTranslateDescription")}
         </Text>
       </div>
       <Switch checked={autoTranslate} onCheckedChange={setAutoTranslate} />
     </div>
     {autoTranslate ? <Text variant="mini" color="tertiary">
-      Privacy note: eligible post text is sent automatically to your selected translation provider. This is on by default while a provider is configured, and you can turn it off here.
+      {t("translation.autoTranslatePrivacyNote")}
     </Text> : null}
     <Text variant="mini" color="tertiary">
-      DeepL and hosted LibreTranslate keys are entered on Provider Keys. A self-hosted LibreTranslate server may not require one.
+      {t("translation.providerKeysNote")}
     </Text>
-    {settings.isError ? <Text variant="mini" color="danger">{actionableError(settings.error, "Could not load translation settings")}</Text> : null}
+    {settings.isError ? <Text variant="mini" color="danger">{actionableError(settings.error, t("translation.loadError"))}</Text> : null}
     <Button variant="accent" className="self-start" disabled={save.isPending || !libreUrl.trim()}
-      onClick={() => save.mutate()}>Save translation settings</Button>
+      onClick={() => save.mutate()}>{t("translation.saveButton")}</Button>
   </div>;
 }
 
-const PAGE_IDS = new Set<SettingsPage>(PAGES.map((item) => item.id));
+const PAGE_ID_SET = new Set<SettingsPage>(PAGE_IDS);
 
 // A fresh settings window can be opened straight to a page (see
 // windows/settings-window.ts's `initialPage` — used by the weekly-digest
 // notification's click handler) via a `?page=` query param, read once here.
 function initialPageFromUrl(): SettingsPage {
   const requested = new URLSearchParams(window.location.search).get("page");
-  return requested && PAGE_IDS.has(requested as SettingsPage) ? (requested as SettingsPage) : "accounts";
+  return requested && PAGE_ID_SET.has(requested as SettingsPage) ? (requested as SettingsPage) : "accounts";
 }
 
 export function SettingsView({ embedded = false }: { embedded?: boolean } = {}) {
+  const { t } = useTranslation();
   // Embedded settings share the main window's URL, which was never given a
   // `?page=` for this purpose — only a dedicated settings window's own URL is.
   const [page, setPage] = React.useState<SettingsPage>(() => (embedded ? "accounts" : initialPageFromUrl()));
@@ -194,16 +213,16 @@ export function SettingsView({ embedded = false }: { embedded?: boolean } = {}) 
   }, [embedded]);
 
   return <div className="flex h-full flex-col">
-    <Toolbar><ToolbarContent><ToolbarTitle>Settings</ToolbarTitle></ToolbarContent></Toolbar>
+    <Toolbar><ToolbarContent><ToolbarTitle>{t("settingsNav.title")}</ToolbarTitle></ToolbarContent></Toolbar>
     <div className="flex min-h-0 flex-1 border-t border-secondary">
-      <nav aria-label="Settings sections" className="flex w-44 shrink-0 flex-col gap-1 border-r border-secondary p-3">
-        {PAGES.map((item) => <Button key={item.id} variant={page === item.id ? "filled" : "transparent"}
-          className="justify-start" aria-current={page === item.id ? "page" : undefined}
-          onClick={() => setPage(item.id)}>{item.icon}{item.label}</Button>)}
+      <nav aria-label={t("settingsNav.sectionsAriaLabel")} className="flex w-44 shrink-0 flex-col gap-1 border-r border-secondary p-3">
+        {PAGE_IDS.map((id) => <Button key={id} variant={page === id ? "filled" : "transparent"}
+          className="justify-start" aria-current={page === id ? "page" : undefined}
+          onClick={() => setPage(id)}>{PAGE_ICONS[id]}{t(PAGE_LABEL_KEY[id])}</Button>)}
       </nav>
       <ScrollArea className="min-w-0 flex-1">
         <main className="flex flex-col gap-5 p-5 pb-10">
-          <div><Text as="h2" variant="heading2">{PAGES.find((item) => item.id === page)?.label}</Text></div>
+          <div><Text as="h2" variant="heading2">{t(PAGE_LABEL_KEY[page])}</Text></div>
           {page === "accounts" ? <AccountSettings /> : null}
           {page === "appearance" ? <AppearanceSettings /> : null}
           {page === "feeds" ? <FeedsSettings /> : null}

@@ -1,4 +1,5 @@
 import { PenLine } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@glaze/core/components";
 import { cn } from "@glaze/core/utils";
 
@@ -13,6 +14,7 @@ export function FloatingComposeButton({
   visible: boolean;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-end pr-6">
       <Tooltip>
@@ -21,7 +23,7 @@ export function FloatingComposeButton({
             iconOnly
             variant="accent"
             size="large"
-            aria-label="Compose"
+            aria-label={t("nav.compose")}
             tabIndex={visible ? 0 : -1}
             onClick={onClick}
             className={cn(
@@ -32,7 +34,7 @@ export function FloatingComposeButton({
             <PenLine />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="left">Compose</TooltipContent>
+        <TooltipContent side="left">{t("nav.compose")}</TooltipContent>
       </Tooltip>
     </div>
   );

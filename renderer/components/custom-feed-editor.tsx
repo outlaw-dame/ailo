@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image, Save, WandSparkles } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Badge, Button, Input, Text, Textarea, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
@@ -36,6 +37,7 @@ const toCustomFeedInput = (draft: DraftText): CustomFeedInput => ({
 
 /** Create or edit a custom feed's rules. `initial: null` creates; otherwise edits in place. */
 export function CustomFeedEditor({ initial, onSaved }: { initial: CustomFeed | null; onSaved: (feed: CustomFeed) => void }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [draft, setDraft] = React.useState<DraftText>(toDraftText(initial ?? EMPTY));
   const [uploading, setUploading] = React.useState<"avatarUrl" | "bannerUrl" | null>(null);
@@ -48,19 +50,19 @@ export function CustomFeedEditor({ initial, onSaved }: { initial: CustomFeed | n
     onSuccess: async (feed) => {
       await queryClient.invalidateQueries({ queryKey: ["fedipod", "custom-feeds"] });
       onSaved(feed);
-      toast.success(initial ? "Custom feed updated" : "Custom feed created");
+      toast.success(initial ? t("customFeedEditor.saveSuccess") : t("customFeedEditor.createSuccess"));
     },
     onError: (error: Error) => toast.error(error.message),
   });
   const draftWithAi = useMutation({
     mutationFn: () => api.ai.draftCustomFeed(aiPrompt),
-    onSuccess: (result) => { setDraft(toDraftText(result)); toast.success("AI draft ready to review"); },
+    onSuccess: (result) => { setDraft(toDraftText(result)); toast.success(t("customFeedEditor.draftSuccess")); },
     onError: (error: Error) => toast.error(error.message),
   });
   const hasSource = lines(draft.accounts).length + lines(draft.hashtags).length + lines(draft.semanticKeywords).length > 0;
   const uploadImage = async (key: "avatarUrl" | "bannerUrl", file?: File) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) return toast.error("Choose an image file");
+    if (!file.type.startsWith("image/")) return toast.error(t("customFeedEditor.chooseImageError"));
     setUploading(key);
     try {
       const media = await api.fedipod.uploadMedia({ filename: file.name, mimeType: file.type, data: await file.arrayBuffer() });
@@ -71,56 +73,56 @@ export function CustomFeedEditor({ initial, onSaved }: { initial: CustomFeed | n
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <Text variant="strong">{initial ? "Edit feed" : "New custom feed"}</Text>
-        <Text variant="small" color="tertiary">Matches any included rule. Exclusions always win.</Text>
+        <Text variant="strong">{initial ? t("customFeedEditor.titleEdit") : t("customFeedEditor.titleCreate")}</Text>
+        <Text variant="small" color="tertiary">{t("customFeedEditor.rulesNote")}</Text>
       </div>
       {aiStatus.data?.enabled ? <div className="flex flex-col gap-1 rounded-card border border-secondary bg-control-subtle p-3">
-        <Text variant="small-strong">Draft with {aiStatus.data.defaultProvider === "gemini" ? "Gemini" : "OpenAI"}</Text>
-        <Text variant="mini" color="tertiary">Only this request is sent to your provider. Rules stay editable, and post matching remains on-device.</Text>
-        <div className="mt-2 flex gap-2"><Input value={aiPrompt} onChange={(event) => setAiPrompt(event.target.value)} placeholder="Local climate reporting, no sports…" maxLength={4000} /><Button disabled={!aiPrompt.trim() || draftWithAi.isPending} onClick={() => draftWithAi.mutate()}><WandSparkles />{draftWithAi.isPending ? "Drafting…" : "Make draft"}</Button></div>
+        <Text variant="small-strong">{aiStatus.data.defaultProvider === "gemini" ? t("customFeedEditor.draftWithGemini") : t("customFeedEditor.draftWithOpenAI")}</Text>
+        <Text variant="mini" color="tertiary">{t("customFeedEditor.draftNote")}</Text>
+        <div className="mt-2 flex gap-2"><Input value={aiPrompt} onChange={(event) => setAiPrompt(event.target.value)} placeholder={t("customFeedEditor.draftPromptPlaceholder")} maxLength={4000} /><Button disabled={!aiPrompt.trim() || draftWithAi.isPending} onClick={() => draftWithAi.mutate()}><WandSparkles />{draftWithAi.isPending ? t("customFeedEditor.draftButtonPending") : t("customFeedEditor.draftButton")}</Button></div>
       </div> : null}
-      <Input value={draft.name} onChange={(event) => setDraft((d) => ({ ...d, name: event.target.value }))} placeholder="Feed name" aria-label="Feed name" maxLength={80} />
-      <Textarea value={draft.description} onChange={(event) => setDraft((d) => ({ ...d, description: event.target.value }))} placeholder="What this feed is about (optional)" aria-label="Feed description" maxLength={500} rows={3} />
+      <Input value={draft.name} onChange={(event) => setDraft((d) => ({ ...d, name: event.target.value }))} placeholder={t("customFeedEditor.feedNamePlaceholder")} aria-label={t("customFeedEditor.feedNameAriaLabel")} maxLength={80} />
+      <Textarea value={draft.description} onChange={(event) => setDraft((d) => ({ ...d, description: event.target.value }))} placeholder={t("customFeedEditor.feedDescriptionPlaceholder")} aria-label={t("customFeedEditor.feedDescriptionAriaLabel")} maxLength={500} rows={3} />
       <div className="grid gap-3 sm:grid-cols-2">
         {(["avatarUrl", "bannerUrl"] as const).map((key) => <div key={key} className="overflow-hidden rounded-card border border-secondary bg-control-subtle">
           <div className={`relative ${key === "avatarUrl" ? "aspect-square max-h-36" : "aspect-[3/1]"}`}>
             {draft[key] ? <img src={draft[key]!} alt="" className="size-full object-cover" /> : <div className="flex size-full items-center justify-center"><Image className="size-6 text-tertiary" /></div>}
           </div>
           <div className="flex items-center gap-2 p-2">
-            <label className="cursor-pointer text-sm font-medium"><input className="sr-only" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif" disabled={Boolean(uploading)} onChange={(event) => { void uploadImage(key, event.target.files?.[0]); event.currentTarget.value = ""; }} />{uploading === key ? "Uploading…" : key === "avatarUrl" ? "Profile image" : "Banner image"}</label>
-            {draft[key] ? <Button size="small" variant="transparent" className="ml-auto" onClick={() => setDraft((current) => ({ ...current, [key]: null }))}>Remove</Button> : null}
+            <label className="cursor-pointer text-sm font-medium"><input className="sr-only" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif" disabled={Boolean(uploading)} onChange={(event) => { void uploadImage(key, event.target.files?.[0]); event.currentTarget.value = ""; }} />{uploading === key ? t("customFeedEditor.uploading") : key === "avatarUrl" ? t("customFeedEditor.profileImage") : t("customFeedEditor.bannerImage")}</label>
+            {draft[key] ? <Button size="small" variant="transparent" className="ml-auto" onClick={() => setDraft((current) => ({ ...current, [key]: null }))}>{t("customFeedEditor.removeImage")}</Button> : null}
           </div>
         </div>)}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
-          <Text variant="small-strong">People</Text>
-          <Text variant="mini" color="tertiary">One @person@server per line. This does not follow them.</Text>
-          <Textarea value={draft.accounts} onChange={(event) => setList("accounts", event.target.value)} placeholder="alice@example.social" rows={4} />
+          <Text variant="small-strong">{t("customFeedEditor.peopleTitle")}</Text>
+          <Text variant="mini" color="tertiary">{t("customFeedEditor.peopleNote")}</Text>
+          <Textarea value={draft.accounts} onChange={(event) => setList("accounts", event.target.value)} placeholder={t("customFeedEditor.peoplePlaceholder")} rows={4} />
         </label>
         <label className="flex flex-col gap-1.5">
-          <Text variant="small-strong">Hashtags</Text>
-          <Text variant="mini" color="tertiary">One tag per line, with or without #.</Text>
-          <Textarea value={draft.hashtags} onChange={(event) => setList("hashtags", event.target.value)} placeholder="#indieweb" rows={4} />
+          <Text variant="small-strong">{t("customFeedEditor.hashtagsTitle")}</Text>
+          <Text variant="mini" color="tertiary">{t("customFeedEditor.hashtagsNote")}</Text>
+          <Textarea value={draft.hashtags} onChange={(event) => setList("hashtags", event.target.value)} placeholder={t("customFeedEditor.hashtagsPlaceholder")} rows={4} />
         </label>
       </div>
       <label className="flex flex-col gap-1.5">
-        <span className="flex items-center gap-2"><WandSparkles className="size-4" /><Text variant="small-strong">Topics and whole phrases</Text><Badge size="small">On-device semantic</Badge></span>
-        <Text variant="mini" color="tertiary">One topic per line. Exact phrase matches appear immediately; similar meaning is matched locally.</Text>
-        <Textarea value={draft.semanticKeywords} onChange={(event) => setList("semanticKeywords", event.target.value)} placeholder={"community-owned social media\nrenewable energy transition"} rows={4} />
+        <span className="flex items-center gap-2"><WandSparkles className="size-4" /><Text variant="small-strong">{t("customFeedEditor.topicsTitle")}</Text><Badge size="small">{t("customFeedEditor.topicsBadge")}</Badge></span>
+        <Text variant="mini" color="tertiary">{t("customFeedEditor.topicsNote")}</Text>
+        <Textarea value={draft.semanticKeywords} onChange={(event) => setList("semanticKeywords", event.target.value)} placeholder={t("customFeedEditor.topicsPlaceholder")} rows={4} />
       </label>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
-          <Text variant="small-strong">Exclude words or phrases</Text>
-          <Textarea value={draft.excludeWords} onChange={(event) => setList("excludeWords", event.target.value)} placeholder="spoilers" rows={3} />
+          <Text variant="small-strong">{t("customFeedEditor.excludeWordsTitle")}</Text>
+          <Textarea value={draft.excludeWords} onChange={(event) => setList("excludeWords", event.target.value)} placeholder={t("customFeedEditor.excludeWordsPlaceholder")} rows={3} />
         </label>
         <label className="flex flex-col gap-1.5">
-          <Text variant="small-strong">Exclude people</Text>
-          <Textarea value={draft.excludeAccounts} onChange={(event) => setList("excludeAccounts", event.target.value)} placeholder="bot@example.social" rows={3} />
+          <Text variant="small-strong">{t("customFeedEditor.excludeAccountsTitle")}</Text>
+          <Textarea value={draft.excludeAccounts} onChange={(event) => setList("excludeAccounts", event.target.value)} placeholder={t("customFeedEditor.excludeAccountsPlaceholder")} rows={3} />
         </label>
       </div>
       <Button className="self-end" variant="accent" disabled={save.isPending || !draft.name.trim() || !hasSource} onClick={() => save.mutate()}>
-        <Save />{initial ? "Save changes" : "Create feed"}
+        <Save />{initial ? t("customFeedEditor.saveButton") : t("customFeedEditor.createButton")}
       </Button>
     </div>
   );

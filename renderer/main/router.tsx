@@ -5,6 +5,7 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { QueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { ErrorBoundaryView } from "@glaze/core/components";
 
 import { EditorView } from "./editor-view";
@@ -16,6 +17,7 @@ import { PostDetailView } from "./post-detail-view";
 import { ProfileView } from "./profile-view";
 import { RootView } from "./root-view";
 import { SettingsView } from "../settings/settings-view";
+import { StatusThreadView } from "./status-thread-view";
 
 const rootRoute = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -23,10 +25,11 @@ const rootRoute = createRootRouteWithContext<{
   component: RootView,
   errorComponent: ErrorBoundaryView,
   notFoundComponent: () => {
+    const { t } = useTranslation();
     return (
       <div className="flex flex-col items-center justify-center h-screen">
         <div className="drag-region fixed top-0 left-0 right-0 h-13" />
-        <p className="text-secondary">Route not found</p>
+        <p className="text-secondary">{t("errors.routeNotFound")}</p>
       </div>
     );
   },
@@ -74,6 +77,13 @@ const fediverseRoute = createRoute({
   staticData: { title: "Fediverse" },
 });
 
+const statusThreadRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/fediverse/status/$statusId",
+  component: StatusThreadView,
+  staticData: { title: "Post" },
+});
+
 const feedsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/feeds",
@@ -101,6 +111,7 @@ const routeTree = rootRoute.addChildren([
   editRoute,
   postRoute,
   fediverseRoute,
+  statusThreadRoute,
   feedsRoute,
   feedDetailRoute,
   profileRoute,

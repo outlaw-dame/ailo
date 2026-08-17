@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import {
   Ban,
   BadgeCheck,
@@ -15,6 +16,7 @@ import {
   UserPlus,
   VolumeX,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Badge, Button, Text, toast } from "@glaze/core/components";
 
 import { api } from "../lib/api";
@@ -34,14 +36,19 @@ export function StatusCard({
   onQuote,
   ownAccountId,
   onHashtag,
+  onStatusClick,
 }: {
   status: MastodonStatus;
   onReply?: (status: MastodonStatus) => void;
   onQuote?: (status: MastodonStatus) => void;
   ownAccountId?: string | null;
   onHashtag?: (tag: string) => void;
+  /** Called when the post body area is clicked. Defaults to navigating to the thread view. */
+  onStatusClick?: ((status: MastodonStatus) => void) | null;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const booster = status.reblog ? status.account : null;
   const s = status.reblog ?? status;
   const followTarget = booster?.group ? booster : s.account;
@@ -54,8 +61,23 @@ export function StatusCard({
   const filterKey = filterWarnings.map((result) => result.filter.id).join(",");
   React.useEffect(() => setFilterRevealed(!filterKey), [filterKey]);
 
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] });
+  // Navigate to thread view when the post body is clicked, unless a specific
+  // handler is provided (pass null to disable navigation entirely).
+  const handleCardClick = React.useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      // Don't hijack clicks on interactive elements (buttons, links, inputs).
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("button, a, input, select, textarea, [role=button]")) return;
+      if (onStatusClick === null) return;
+      if (onStatusClick) {
+        onStatusClick(s);
+      } else {
+        void navigate({ to: "/fediverse/status/$statusId", params: { statusId: s.id } });
+      }
+    },
+    [navigate, onStatusClick, s],
+  );
+  const invalidate = () => {    void queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] });
     void queryClient.invalidateQueries({ queryKey: ["fedipod", "notifications"] });
   };
 
@@ -83,8 +105,8 @@ export function StatusCard({
     onSuccess: () =>
       toast.success(
         followTarget.group
-          ? `Joined !${followTarget.acct || followTarget.username}`
-          : `Following @${followTarget.acct || followTarget.username}`,
+          ? t("statusCard.joinSuccess", { handle: followTarget.acct || followTarget.username })
+          : t("statusCard.followSuccess", { handle: followTarget.acct || followTarget.username }),
       ),
     onError: (e: Error) => toast.error(e.message),
   });
@@ -93,7 +115,7 @@ export function StatusCard({
     onSuccess: () => {
       invalidate();
       void queryClient.invalidateQueries({ queryKey: ["fedipod", "mutes"] });
-      toast.success(`Muted @${s.account.acct || s.account.username}`);
+      toast.success(t("statusCard.muteSuccess", { handle: s.account.acct || s.account.username }));
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -102,7 +124,7 @@ export function StatusCard({
     onSuccess: () => {
       invalidate();
       void queryClient.invalidateQueries({ queryKey: ["fedipod", "blocks"] });
-      toast.success(`Blocked @${s.account.acct || s.account.username}`);
+      toast.success(t("statusCard.blockSuccess", { handle: s.account.acct || s.account.username }));
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -110,7 +132,7 @@ export function StatusCard({
     mutationFn: () => api.fedipod.pin(s.id, !s.pinned),
     onSuccess: (data) => {
       patchStatusInCaches(queryClient, s.id, { pinned: data.pinned });
-      toast.success(data.pinned ? "Post pinned" : "Post unpinned");
+      toast.success(data.pinned ? t("statusCard.pinned") : t("statusCard.unpinned"));
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -130,7 +152,7 @@ export function StatusCard({
         }
         setUnsafeLink(null);
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Safe Browsing check failed");
+        toast.error(error instanceof Error ? error.message : t("statusCard.safeBrowsingCheckFailed"));
         return;
       }
     }
@@ -189,15 +211,47 @@ export function StatusCard({
 
   if (hiddenByFilter) return null;
 
+  const isClickable = onStatusClick !== null;
+
   return (
-    <article className="rounded-card border border-secondary bg-well/30 px-4 py-3.5 flex flex-col gap-2.5">
+    <article
+      className={
+        isClickable
+          ? "rounded-card border border-secondary bg-well/30 px-4 py-3.5 flex flex-col gap-2.5 cursor-pointer transition-colors hover:bg-well/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          : "rounded-card border border-secondary bg-well/30 px-4 py-3.5 flex flex-col gap-2.5"
+      }
+      tabIndex={isClickable ? 0 : undefined}
+      aria-label={
+        isClickable
+          ? t("statusCard.openThread", {
+              defaultValue: "Open post by {{name}}",
+              name: s.account.displayName || s.account.acct || s.account.username,
+            })
+          : undefined
+      }
+      onClick={isClickable ? handleCardClick : undefined}
+      onKeyDown={
+        isClickable
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                // Synthesise a minimal click-like event value to satisfy the callback's type.
+                handleCardClick({
+                  target: event.target,
+                  currentTarget: event.currentTarget,
+                } as unknown as React.MouseEvent<HTMLElement>);
+              }
+            }
+          : undefined
+      }
+    >
       {booster ? (
         <div className="flex items-center gap-1.5 text-tertiary">
           <Repeat2 className="size-3.5 shrink-0" />
           <Text variant="mini" color="tertiary" truncate>
             {booster.group
-              ? `Shared to !${booster.acct || booster.username}`
-              : `${booster.displayName} boosted`}
+              ? t("statusCard.sharedTo", { handle: booster.acct || booster.username })
+              : t("statusCard.boostedBy", { name: booster.displayName })}
           </Text>
         </div>
       ) : null}
@@ -223,7 +277,7 @@ export function StatusCard({
           </Text>
           {s.account.group ? (
             <Badge color="blue" size="small" className="mt-1 w-fit">
-              Community
+              {t("statusCard.communityBadge")}
             </Badge>
           ) : null}
         </div>
@@ -232,7 +286,10 @@ export function StatusCard({
             size="small"
             variant="transparent"
             iconOnly
-            aria-label={`${followTarget.group ? "Join" : "Follow"} ${followTarget.displayName}`}
+            aria-label={t(
+              followTarget.group ? "statusCard.joinAriaLabel" : "statusCard.followAriaLabel",
+              { name: followTarget.displayName },
+            )}
             disabled={follow.isPending}
             onClick={() => follow.mutate()}
           >
@@ -248,7 +305,7 @@ export function StatusCard({
             {s.spoilerText}
           </Text>
           <Button size="small" variant="filled" onClick={() => setRevealed((v) => !v)}>
-            {revealed ? "Hide" : "Show"}
+            {revealed ? t("statusCard.spoilerHide") : t("statusCard.spoilerShow")}
           </Button>
         </div>
       ) : null}
@@ -257,10 +314,12 @@ export function StatusCard({
         <div className="flex flex-wrap items-center gap-2 rounded-control border border-dashed border-secondary px-3 py-2">
           <ShieldAlert className="size-4 shrink-0 text-tertiary" />
           <Text variant="small" className="min-w-0 flex-1">
-            Filtered: {[...new Set(filterWarnings.map((result) => result.filter.title))].join(", ")}
+            {t("statusCard.filteredPrefix", {
+              filterNames: [...new Set(filterWarnings.map((result) => result.filter.title))].join(", "),
+            })}
           </Text>
           <Button size="small" variant="filled" onClick={() => setFilterRevealed((value) => !value)}>
-            {filterRevealed ? "Hide" : "Show"}
+            {filterRevealed ? t("statusCard.spoilerHide") : t("statusCard.spoilerShow")}
           </Button>
         </div>
       ) : null}
@@ -270,24 +329,27 @@ export function StatusCard({
           <div className="flex items-start gap-2 text-danger">
             <ShieldAlert className="mt-0.5 size-4 shrink-0" />
             <Text variant="small" color="danger">
-              Google identified this address as potentially risky
-              {unsafeLink.result.threats.flatMap((threat) => threat.threatTypes).length
-                ? ` (${unsafeLink.result.threats.flatMap((threat) => threat.threatTypes).join(", ")})`
-                : ""}. Results may be incomplete or mistaken.
+              {t("statusCard.safeBrowsingWarning", {
+                threats: unsafeLink.result.threats.flatMap((threat) => threat.threatTypes).length
+                  ? t("statusCard.safeBrowsingThreats", {
+                    types: unsafeLink.result.threats.flatMap((threat) => threat.threatTypes).join(", "),
+                  })
+                  : "",
+              })}
             </Text>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="small" variant="filled" onClick={() => void api.app.openExternal(unsafeLink.url)}>
-              Open anyway
+              {t("statusCard.openAnyway")}
             </Button>
             <Button
               size="small"
               variant="transparent"
               onClick={() => void api.app.openExternal("https://developers.google.com/safe-browsing/v4/advisory")}
             >
-              Advisory provided by Google
+              {t("statusCard.safeBrowsingAdvisory")}
             </Button>
-            <Button size="small" variant="transparent" onClick={() => setUnsafeLink(null)}>Dismiss</Button>
+            <Button size="small" variant="transparent" onClick={() => setUnsafeLink(null)}>{t("common.dismiss")}</Button>
           </div>
         </div>
       ) : null}
@@ -297,7 +359,7 @@ export function StatusCard({
           {s.objectType === "Article" ? (
             <div className="flex flex-col gap-1">
               <Badge color="blue" size="small" className="w-fit">
-                Article
+                {t("statusCard.articleBadge")}
               </Badge>
               {s.title ? <h2 className="text-lg font-semibold leading-tight">{s.title}</h2> : null}
             </div>
@@ -355,10 +417,11 @@ export function StatusCard({
                   >
                     <BadgeCheck className="size-3.5 shrink-0" />
                     <Text variant="mini" color="tertiary" truncate>
-                      Credited to{" "}
-                      {s.card.authors[0]?.account
-                        ? `@${s.card.authors[0].account.acct || s.card.authors[0].account.username}`
-                        : s.card.authors[0]?.name}
+                      {t("statusCard.creditedTo", {
+                        handle: s.card.authors[0]?.account
+                          ? `@${s.card.authors[0].account.acct || s.card.authors[0].account.username}`
+                          : s.card.authors[0]?.name,
+                      })}
                     </Text>
                   </button>
                 ) : null}
@@ -366,7 +429,7 @@ export function StatusCard({
                   <div className="mt-1 flex items-center gap-1.5 text-danger">
                     <ShieldAlert className="size-3.5 shrink-0" />
                     <Text variant="mini" color="danger">
-                      This page names you as creator, but its domain is not in your allowed websites.
+                      {t("statusCard.missingAttribution")}
                     </Text>
                   </div>
                 ) : null}
@@ -374,7 +437,7 @@ export function StatusCard({
                   <div className="mt-1 flex items-start gap-1.5 text-tertiary">
                     <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
                     <Text variant="mini" color="tertiary">
-                      Checked with Google Safe Browsing when opened; some risky sites may be missed and safe sites may be identified in error
+                      {t("statusCard.safeBrowsingNote")}
                     </Text>
                   </div>
                 ) : null}
@@ -384,17 +447,17 @@ export function StatusCard({
           {translationVisible ? (
             <div className="flex flex-col gap-1 rounded-control border border-dashed border-secondary px-3 py-2" aria-live="polite">
               <Text variant="mini" color="tertiary">
-                {autoTranslation && !manualTranslation ? "Auto-translated" : "Translated"}
-                {languageName(s.language) ? ` from ${languageName(s.language)}` : ""}
-                {` to ${languageName(targetLang) ?? targetLang}`}
+                {autoTranslation && !manualTranslation ? t("statusCard.autoTranslated") : t("statusCard.translated")}
+                {languageName(s.language) ? t("statusCard.translatedFrom", { language: languageName(s.language) }) : ""}
+                {t("statusCard.translatedTo", { language: languageName(targetLang) ?? targetLang })}
               </Text>
-              {translation.isPending ? <Text variant="small" color="tertiary">Translating…</Text> : null}
+              {translation.isPending ? <Text variant="small" color="tertiary">{t("statusCard.translating")}</Text> : null}
               {translation.data ? <Text variant="small" className="whitespace-pre-wrap" lang={targetLang} dir="auto">
                 {translation.data}
               </Text> : null}
               {translation.isError ? <div className="flex items-center gap-2">
-                <Text variant="small" color="danger">{actionableError(translation.error, "Failed to translate")}</Text>
-                <Button size="small" variant="transparent" onClick={() => void translation.refetch()}>Retry</Button>
+                <Text variant="small" color="danger">{actionableError(translation.error, t("statusCard.translateError"))}</Text>
+                <Button size="small" variant="transparent" onClick={() => void translation.refetch()}>{t("common.retry")}</Button>
               </div> : null}
             </div>
           ) : null}
@@ -411,7 +474,7 @@ export function StatusCard({
                 />
               </div>
             ) : (
-              <Text variant="mini" color="tertiary">Quote {s.quote.state}</Text>
+              <Text variant="mini" color="tertiary">{t("statusCard.quoteState", { state: s.quote.state })}</Text>
             )
           ) : null}
         </>
@@ -444,7 +507,7 @@ export function StatusCard({
         {isOwn ? (
           <Button size="small" variant="transparent" className={s.pinned ? "text-primary" : undefined}
             disabled={pin.isPending} onClick={() => pin.mutate()}>
-            <Pin />{s.pinned ? "Unpin" : "Pin"}
+            <Pin />{s.pinned ? t("statusCard.unpin") : t("statusCard.pin")}
           </Button>
         ) : null}
         <Button
@@ -474,7 +537,7 @@ export function StatusCard({
             }}
           >
             <Languages />
-            {translationVisible ? "Hide translation" : "Translate"}
+            {translationVisible ? t("statusCard.hideTranslation") : t("statusCard.translate")}
           </Button>
         ) : null}
         {!isOwn ? <Button
@@ -484,7 +547,7 @@ export function StatusCard({
           onClick={() => mute.mutate()}
         >
           <VolumeX />
-          Mute
+          {t("statusCard.mute")}
         </Button> : null}
         {!isOwn ? (
           <Button
@@ -492,11 +555,11 @@ export function StatusCard({
             variant="transparent"
             disabled={block.isPending}
             onClick={() => {
-              if (window.confirm(`Block @${s.account.acct || s.account.username}?`)) block.mutate();
+              if (window.confirm(t("statusCard.blockConfirm", { handle: s.account.acct || s.account.username }))) block.mutate();
             }}
           >
             <Ban />
-            Block
+            {t("statusCard.block")}
           </Button>
         ) : null}
         {s.url ? (
@@ -504,7 +567,7 @@ export function StatusCard({
             size="small"
             variant="transparent"
             iconOnly
-            aria-label="Open in browser"
+            aria-label={t("statusCard.openInBrowser")}
             className="ml-auto"
             onClick={() => {
               if (s.url) void openExternalChecked(s.url);

@@ -690,6 +690,83 @@ class FediPodService {
 
   /* -------------------------------- reads -------------------------------- */
 
+  async fetchStatus(id: string): Promise<MastodonStatus> {
+    const raw = await this.authed(`/api/v1/statuses/${encodeURIComponent(id)}`);
+    return mapStatus(raw);
+  }
+
+  /**
+   * Resolves a status by its ActivityPub URI via FediPod's search endpoint,
+   * forcing a fetch from the origin instance so we always get authoritative
+   * data (accurate reply counts, edits, deletions) rather than whatever
+   * FediPod has cached locally.  Returns null if the URI cannot be resolved.
+   */
+  async resolveStatusByUri(uri: string): Promise<MastodonStatus | null> {
+    try {
+      const params = new URLSearchParams({ q: uri, resolve: "true", limit: "1" });
+      const raw = await this.authed(`/api/v2/search?${params.toString()}`);
+      const r = isRecord(raw) ? raw : {};
+      const statuses = arr(r.statuses);
+      if (statuses.length === 0) return null;
+      return mapStatus(statuses[0]);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Fetches the full thread context for a status.
+   *
+   * Strategy:
+   * 1. Fetch the status itself to get its canonical `uri` (ActivityPub URL).
+   * 2. If the uri's host differs from FediPod's own host, resolve the status
+   *    via /api/v2/search?resolve=true so FediPod re-fetches it from the
+   *    origin instance, ensuring up-to-date reply counts and content.
+   * 3. Fetch /api/v1/statuses/:id/context — FediPod will have pulled the
+   *    origin's replies into its local store during step 2.
+   *
+   * This mirrors what Phanpy does (it relies on the instance's search
+   * endpoint to force federation) but goes further: we also refresh the
+   * focal status itself, not just the context.
+   */
+  async fetchStatusContext(id: string): Promise<{
+    status: MastodonStatus;
+    ancestors: MastodonStatus[];
+    descendants: MastodonStatus[];
+  }> {
+    // Step 1 — fetch the canonical status so we have its uri and home instance.
+    const status = await this.fetchStatus(id);
+
+    // Step 2 — if this is a remote post, force FediPod to refresh it from
+    // the origin instance before we pull context.  We do this best-effort
+    // and fall back to the already-fetched status if it fails.
+    let canonical = status;
+    if (status.uri) {
+      try {
+        const uriHost = new URL(status.uri).hostname;
+        const config = await this.config.load();
+        const localHost = config.baseUrl ? new URL(config.baseUrl).hostname : "";
+        if (uriHost && uriHost !== localHost) {
+          const resolved = await this.resolveStatusByUri(status.uri);
+          if (resolved) canonical = resolved;
+        }
+      } catch {
+        // uri may be malformed or network unavailable — keep local copy
+      }
+    }
+
+    // Step 3 — fetch context (ancestors + descendants) using the id we have.
+    // After the resolve above, FediPod's store will have pulled in replies
+    // from the origin, so /context returns a much fuller picture.
+    const raw = await this.authed(`/api/v1/statuses/${encodeURIComponent(canonical.id)}/context`);
+    const r = isRecord(raw) ? raw : {};
+    return {
+      status: canonical,
+      ancestors: arr(r.ancestors).map((item) => mapStatus(item)),
+      descendants: arr(r.descendants).map((item) => mapStatus(item)),
+    };
+  }
+
   async fetchHomeTimeline(
     options: { maxId?: string; limit?: number } = {},
   ): Promise<MastodonStatus[]> {
