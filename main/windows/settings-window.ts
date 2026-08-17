@@ -1,4 +1,5 @@
 import { BrowserWindow, logger } from "@glaze/core/backend";
+import { t } from "../services/i18n.js";
 import { getPreloadPath, getWindowUrl } from "./window-paths.js";
 
 let settingsWindow: BrowserWindow | null = null;
@@ -23,7 +24,7 @@ export async function openSettingsWindow(initialPage?: string): Promise<void> {
     height: 300,
     minWidth: 400,
     minHeight: 200,
-    title: "Settings",
+    title: t("settingsNav.title"),
     show: false,
     center: true,
     webPreferences: {

@@ -1,6 +1,7 @@
 import { Notification } from "@glaze/core/backend";
 
 import { JsonStore } from "./json-store.js";
+import { t } from "./i18n.js";
 import { openSettingsWindow } from "../windows/settings-window.js";
 import type { ModerationStatsBundle } from "../types.js";
 
@@ -23,8 +24,8 @@ function summaryLine(stats: ModerationStatsBundle): string {
   const contentBlocked = stats.filteredPosts + stats.intakeBlockedPosts;
   const somethingNew = contentBlocked > 0 || stats.newBlockedAccounts > 0
     || stats.newMutedAccounts > 0 || stats.newBlockedDomains > 0;
-  if (!somethingNew) return "A quiet week — nothing new to report.";
-  return `${contentBlocked} post${contentBlocked === 1 ? "" : "s"} kept out of your feed this week.`;
+  if (!somethingNew) return t("notifications.moderationDigestQuiet");
+  return t("notifications.moderationDigestSummary", { count: contentBlocked });
 }
 
 /**
@@ -56,7 +57,7 @@ export async function maybeShowWeeklyDigest(getStats: () => Promise<ModerationSt
 
   await store.save({ lastShownAt: now });
   const notification = new Notification({
-    title: "Your weekly moderation recap is ready",
+    title: t("notifications.moderationDigestTitle"),
     body: summaryLine(stats),
   });
   notification.on("click", () => { void openSettingsWindow("moderation"); });

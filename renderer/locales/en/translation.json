@@ -773,5 +773,17 @@
     "minutesAgo": "{{count}}m ago",
     "hoursAgo": "{{count}}h ago",
     "daysAgo": "{{count}}d ago"
+  },
+
+  "notifications": {
+    "moderationDigestTitle": "Your weekly moderation recap is ready",
+    "moderationDigestQuiet": "A quiet week — nothing new to report.",
+    "moderationDigestSummary_one": "{{count}} post kept out of your feed this week.",
+    "moderationDigestSummary_other": "{{count}} posts kept out of your feed this week."
+  },
+
+  "appMenu": {
+    "appLabel": "App",
+    "settingsLabel": "Settings…"
   }
 }

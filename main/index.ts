@@ -15,6 +15,7 @@ import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
 import { openSettingsWindow } from "./windows/settings-window.js";
 import { fediPodService } from "./services/fedipod-service.js";
 import { maybeShowWeeklyDigest } from "./services/moderation-digest.js";
+import { t } from "./services/i18n.js";
 
 // Get directory paths
 const __filename = fileURLToPath(import.meta.url);
@@ -142,12 +143,12 @@ async function setupApplicationMenu() {
   await initDevToolsButtonState();
   const menu = Menu.buildFromTemplate([
     {
-      label: "App",
+      label: t("appMenu.appLabel"),
       submenu: [
         { role: "about" },
         { type: "separator" },
         {
-          label: "Settings…",
+          label: t("appMenu.settingsLabel"),
           icon: "gearshape",
           accelerator: "Command+,",
           click: async () => await openSettingsWindow(),
