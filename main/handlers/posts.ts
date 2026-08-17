@@ -1,6 +1,8 @@
 import { ipcMain, logger } from "@glaze/core/backend";
 
 import { postsStore, type PostInput } from "../services/posts-store.js";
+import { t } from "../services/i18n.js";
+import { requireString } from "../services/handler-validation.js";
 import type { ImageAltText } from "../types.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -19,9 +21,9 @@ function parseAltTexts(value: unknown): ImageAltText[] {
 }
 
 function parsePostInput(value: unknown): PostInput {
-  if (!isRecord(value)) throw new Error("Post payload must be an object");
-  if (typeof value.title !== "string") throw new Error("title is required");
-  if (typeof value.body !== "string") throw new Error("body is required");
+  if (!isRecord(value)) throw new Error(t("backendCommon.payloadInvalid", { noun: t("backendFields.post") }));
+  if (typeof value.title !== "string") throw new Error(t("backendCommon.fieldRequired", { field: t("backendFields.title") }));
+  if (typeof value.body !== "string") throw new Error(t("backendCommon.fieldRequired", { field: t("backendFields.body") }));
   return {
     title: value.title,
     body: value.body,
@@ -43,8 +45,7 @@ export function registerPostsHandlers(): void {
   });
 
   ipcMain.handle("posts:get", async (_event, id: unknown) => {
-    if (typeof id !== "string" || !id) throw new Error("Post id is required");
-    return postsStore.get(id);
+    return postsStore.get(requireString(id, "backendFields.postId"));
   });
 
   ipcMain.handle("posts:create", async (_event, payload: unknown) => {
@@ -56,10 +57,10 @@ export function registerPostsHandlers(): void {
     }
   });
 
-  ipcMain.handle("posts:update", async (_event, id: unknown, payload: unknown) => {
-    if (typeof id !== "string" || !id) throw new Error("Post id is required");
+  ipcMain.handle("posts:update", async (_event, rawId: unknown, payload: unknown) => {
+    const id = requireString(rawId, "backendFields.postId");
     try {
-      if (!isRecord(payload)) throw new Error("Post payload must be an object");
+      if (!isRecord(payload)) throw new Error(t("backendCommon.payloadInvalid", { noun: t("backendFields.post") }));
       const input: Partial<PostInput> = {};
       if (typeof payload.title === "string") input.title = payload.title;
       if (typeof payload.body === "string") input.body = payload.body;
@@ -81,8 +82,7 @@ export function registerPostsHandlers(): void {
   });
 
   ipcMain.handle("posts:delete", async (_event, id: unknown) => {
-    if (typeof id !== "string" || !id) throw new Error("Post id is required");
-    await postsStore.remove(id);
+    await postsStore.remove(requireString(id, "backendFields.postId"));
     return { ok: true };
   });
 }

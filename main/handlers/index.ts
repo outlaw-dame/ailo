@@ -15,6 +15,7 @@ import { registerProfileHandlers } from "./profile.js";
 import { registerPublishHandlers } from "./publish.js";
 import { registerSolidHandlers } from "./solid.js";
 import { getSettingsWindow, openSettingsWindow } from "../windows/settings-window.js";
+import { t } from "../services/i18n.js";
 
 import { ipcMain, logger, shell } from "@glaze/core/backend";
 
@@ -42,7 +43,7 @@ export function registerHandlers(): void {
 
   ipcMain.handle("app:openExternal", async (_event, url: unknown) => {
     if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
-      throw new Error("Only http(s) URLs can be opened");
+      throw new Error(t("backendCommon.externalUrlInvalid"));
     }
     await shell.openExternal(url);
     return { ok: true };

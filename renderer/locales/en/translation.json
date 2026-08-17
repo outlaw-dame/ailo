@@ -785,5 +785,82 @@
   "appMenu": {
     "appLabel": "App",
     "settingsLabel": "Settings…"
+  },
+
+  "backendCommon": {
+    "fieldRequired": "{{field}} is required",
+    "payloadInvalid": "{{noun}} payload must be an object",
+    "postNotFound": "Post not found: {{id}}",
+    "externalUrlInvalid": "Only http(s) URLs can be opened"
+  },
+
+  "backendFields": {
+    "post": "Post",
+    "profile": "Profile",
+    "title": "Title",
+    "body": "Body",
+    "postId": "Post id",
+    "repositoryName": "Repository name",
+    "fedipodUrl": "FediPod URL",
+    "accessToken": "Access token",
+    "statusId": "Status id",
+    "domain": "Domain",
+    "listTitle": "List title",
+    "listId": "List id",
+    "account": "Account",
+    "feedId": "Feed id",
+    "feedName": "Feed name",
+    "feedDescription": "Feed description",
+    "collectionSourceUrl": "Collection source URL",
+    "accountId": "Account id",
+    "collectionName": "Collection name",
+    "collectionId": "Collection id",
+    "featuredTagId": "Featured tag id",
+    "filterTitle": "Filter title",
+    "filterId": "Filter id",
+    "communityHandle": "Community handle",
+    "mediaId": "Media id",
+    "mediaType": "Media type",
+    "text": "Text",
+    "targetLanguage": "Target language",
+    "libreTranslateUrl": "LibreTranslate URL",
+    "gifSearch": "GIF search",
+    "gifSelection": "GIF selection",
+    "filename": "Filename",
+    "accounts": "Accounts",
+    "hashtags": "Hashtags",
+    "topicPhrases": "Topic phrases",
+    "excludedWords": "Excluded words",
+    "excludedAccounts": "Excluded accounts"
+  },
+
+  "backendGithub": {
+    "repoFormatInvalid": "Repository must be owner/name"
+  },
+
+  "backendFedipod": {
+    "hashtagInvalid": "Hashtag must contain letters or an underscore and no spaces or punctuation",
+    "aiProviderInvalid": "AI provider must be openai or gemini",
+    "assistantMessageCountInvalid": "Assistant chat needs 1–40 messages",
+    "assistantMessageShapeInvalid": "Each message needs a user/assistant role and 1–4000 characters of content",
+    "unknownProvider": "Unknown provider",
+    "unknownTranslationProvider": "Unknown translation provider",
+    "apiKeyInvalid": "API key must contain 1–1024 non-whitespace characters",
+    "listTooLong": "{{field}} must be an array of at most 100 strings",
+    "listEntryTooLong": "{{field}} entries must be at most 200 characters",
+    "gateTokenTypeInvalid": "Tunnel access token must be a string",
+    "gateTokenInvalid": "Tunnel access token must contain 1–1024 non-whitespace characters",
+    "creatorDomainsInvalid": "Creator domains must be an array of at most 100 domain names",
+    "emptyPost": "Add text or media before posting",
+    "filenameInvalid": "Filename is invalid",
+    "unsupportedMediaType": "Use a JPEG, PNG, GIF, WebP, AVIF, MP4, WebM, Ogg video, Matroska, or QuickTime file",
+    "mediaSizeInvalid": "Media must be between 1 byte and {{limit}} MB",
+    "mediaDescriptionTooLong": "Media description must be at most 1500 characters",
+    "gifSearchTooLong": "GIF search must contain at most 100 characters",
+    "gifSelectionInvalid": "GIF selection is invalid",
+    "libreUrlTooLong": "LibreTranslate URL must be at most 2048 characters",
+    "targetLanguageInvalid": "Target language must be a valid language code",
+    "safeBrowsingUrlsInvalid": "Safe Browsing accepts 1–50 URLs of at most 2048 characters",
+    "filterKeywordsRequired": "at least one keyword or phrase is required"
   }
 }

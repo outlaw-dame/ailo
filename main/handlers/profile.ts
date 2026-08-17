@@ -1,6 +1,7 @@
 import { ipcMain, logger } from "@glaze/core/backend";
 
 import { profileStore } from "../services/profile-store.js";
+import { t } from "../services/i18n.js";
 import type { Profile } from "../types.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -26,7 +27,7 @@ function safeImageUrl(value: unknown): string {
 }
 
 function parseProfilePatch(value: unknown): Partial<Profile> {
-  if (!isRecord(value)) throw new Error("Profile payload must be an object");
+  if (!isRecord(value)) throw new Error(t("backendCommon.payloadInvalid", { noun: t("backendFields.profile") }));
   const patch: Partial<Profile> = {};
   if (typeof value.displayName === "string") patch.displayName = value.displayName;
   if (typeof value.bio === "string") patch.bio = value.bio;

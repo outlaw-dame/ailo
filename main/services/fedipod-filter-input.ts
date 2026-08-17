@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import type { FilterKeywordInput } from "../types.js";
 import { SEMANTIC_MODEL_GEMINI, SEMANTIC_MODEL_LOCAL, SEMANTIC_MODEL_OPENAI } from "../types.js";
 
@@ -29,6 +30,6 @@ export function requireFilterKeywords(value: unknown): FilterKeywordInput[] {
       semanticModel: typeof row.semanticModel === "string" && SEMANTIC_MODELS.includes(row.semanticModel)
         ? row.semanticModel : SEMANTIC_MODEL_LOCAL,
     }));
-  if (!keywords.length) throw new Error("at least one keyword or phrase is required");
+  if (!keywords.length) throw new Error(t("backendFedipod.filterKeywordsRequired"));
   return keywords;
 }
