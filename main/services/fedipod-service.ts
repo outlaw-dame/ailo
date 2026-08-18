@@ -777,6 +777,15 @@ class FediPodService {
     return arr(raw).map((item) => mapStatus(item));
   }
 
+  async fetchBookmarks(
+    options: { maxId?: string; limit?: number } = {},
+  ): Promise<MastodonStatus[]> {
+    const params = new URLSearchParams({ limit: String(options.limit ?? 40) });
+    if (options.maxId) params.set("max_id", options.maxId);
+    const raw = await this.authed(`/api/v1/bookmarks?${params.toString()}`);
+    return arr(raw).map((item) => mapStatus(item));
+  }
+
   async fetchTagTimeline(
     tag: string,
     options: { maxId?: string; limit?: number } = {},

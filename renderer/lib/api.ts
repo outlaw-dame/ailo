@@ -115,6 +115,8 @@ export const api = {
       ipc().invoke("fedipod:timeline", options ?? {}) as Promise<MastodonStatus[]>,
     tagTimeline: (tag: string, options?: { maxId?: string; limit?: number }) =>
       ipc().invoke("fedipod:tagTimeline", tag, options ?? {}) as Promise<MastodonStatus[]>,
+    bookmarks: (options?: { maxId?: string; limit?: number }) =>
+      ipc().invoke("fedipod:bookmarks", options ?? {}) as Promise<MastodonStatus[]>,
     notifications: () => ipc().invoke("fedipod:notifications") as Promise<MastodonNotification[]>,
     creatorAttribution: () =>
       ipc().invoke("fedipod:creatorAttribution") as Promise<MastodonCreatorAttribution>,

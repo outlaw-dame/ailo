@@ -177,6 +177,15 @@ export function registerFediPodHandlers(): void {
     });
   });
 
+  ipcMain.handle("fedipod:bookmarks", async (_event, options: unknown) => {
+    const opts =
+      typeof options === "object" && options !== null ? (options as Record<string, unknown>) : {};
+    return fediPodService.fetchBookmarks({
+      maxId: typeof opts.maxId === "string" ? opts.maxId : undefined,
+      limit: typeof opts.limit === "number" ? opts.limit : undefined,
+    });
+  });
+
   ipcMain.handle("fedipod:tagTimeline", async (_event, tag: unknown, options: unknown) => {
     const opts =
       typeof options === "object" && options !== null ? (options as Record<string, unknown>) : {};

@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, CalendarDays, Copy, Github, Globe2, Link2, Unplug } from "lucide-react";
+import { AtSign, Bookmark, CalendarDays, Copy, Github, Globe2, Link2, Unplug } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Badge,
@@ -16,10 +16,12 @@ import {
   Switch,
   Text,
   Textarea,
+  ToolbarBackButton,
   toast,
 } from "@glaze/core/components";
 
 import { api } from "../lib/api";
+import { BookmarksPanel } from "./bookmarks-panel";
 
 function normalizeCalPath(input: string): string {
   const trimmed = input.trim();
@@ -83,6 +85,7 @@ export function ProfileView({ settingsOnly = false }: { settingsOnly?: boolean }
   const [fediNeedsPassword, setFediNeedsPassword] = React.useState(false);
   const [creatorDomains, setCreatorDomains] = React.useState("");
   const [hydrated, setHydrated] = React.useState(false);
+  const [view, setView] = React.useState<"profile" | "bookmarks">("profile");
 
   React.useEffect(() => {
     const url = fediQuery.data?.baseUrl;
@@ -796,8 +799,33 @@ export function ProfileView({ settingsOnly = false }: { settingsOnly?: boolean }
   );
 
   if (settingsOnly) return content;
+
+  if (view === "bookmarks") {
+    return (
+      <ScrollArea
+        title={t("profile.bookmarksTabLabel")}
+        leading={<ToolbarBackButton onClick={() => setView("profile")} />}
+        className="h-full"
+      >
+        <div className="px-8 py-6 max-w-3xl">
+          <BookmarksPanel />
+        </div>
+      </ScrollArea>
+    );
+  }
+
   return (
-    <ScrollArea title={t("profile.title")} subtitle={t("profile.subtitle")} className="h-full">
+    <ScrollArea
+      title={t("profile.title")}
+      subtitle={t("profile.subtitle")}
+      actions={
+        <Button size="small" variant="filled" onClick={() => setView("bookmarks")}>
+          <Bookmark />
+          {t("profile.bookmarksTabLabel")}
+        </Button>
+      }
+      className="h-full"
+    >
       {content}
     </ScrollArea>
   );

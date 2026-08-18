@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowUp, AtSign, Bell, Compass, Hash, Home, RefreshCw, Sparkles } from "lucide-react";
+import { AtSign, Bell, Compass, Hash, Home, RefreshCw, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -14,6 +14,7 @@ import {
 
 import { FediverseComposer } from "../components/fediverse-composer";
 import { FloatingComposeButton } from "../components/floating-compose-button";
+import { NewPostsButton } from "../components/new-posts-button";
 import { StatusCard } from "../components/status-card";
 import { FediverseDiscover } from "../components/fediverse-discover";
 import { FediverseTags } from "../components/fediverse-tags";
@@ -36,23 +37,6 @@ function FeedSkeleton() {
         <div key={i} className="h-28 w-full animate-pulse rounded-card bg-control-subtle" />
       ))}
     </div>
-  );
-}
-
-/** Phanpy-style "N new posts" affordance shown instead of silently inserting
- * freshly-arrived posts above whatever the reader is currently looking at. */
-function NewPostsButton({ count, onClick }: { count: number; onClick: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <Button
-      size="small"
-      variant="accent"
-      className="sticky top-0 z-10 self-center"
-      onClick={onClick}
-    >
-      <ArrowUp />
-      {t("fediverse.newPosts", { count })}
-    </Button>
   );
 }
 
@@ -162,7 +146,9 @@ export function FediverseView() {
         return filterCustomFeed(candidates, feed, semantic);
       }));
       const unique = new Map(batches.flat().map((status) => [status.id, status]));
-      return [...unique.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const fresh = [...unique.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const previous = queryClient.getQueryData<typeof fresh>(["fedipod", "for-you"]) ?? [];
+      return mergeById(previous, fresh);
     },
     enabled: fedipodReady && tab === "for-you" && aiStatusQuery.data?.enabled === true,
     refetchInterval: 60_000,
@@ -229,11 +215,13 @@ export function FediverseView() {
   // leave the reader where they left off instead of snapping back to the top.
   const homeReveal = usePendingReveal(timelineQuery.data, viewportRef, "home");
   const tagReveal = usePendingReveal(tagTimelineQuery.data, viewportRef, selectedTag);
+  const forYouReveal = usePendingReveal(forYouQuery.data, viewportRef, "for-you");
   const scrollKey = tab === "tag-feed" ? `tag:${selectedTag ?? ""}` : tab;
   const scrollReady =
     tab === "home" ? !timelineQuery.isLoading
     : tab === "tag-feed" ? !tagTimelineQuery.isLoading
     : tab === "notifications" ? !notificationsQuery.isLoading
+    : tab === "for-you" ? !forYouQuery.isLoading
     : true;
   useScrollMemory(viewportRef, scrollKey, scrollReady, { persist: tab === "home" });
 
@@ -338,12 +326,17 @@ export function FediverseView() {
                 <FeedSkeleton />
               ) : forYouQuery.isError ? (
                 <ErrorNote message={(forYouQuery.error as Error).message} onRetry={() => void forYouQuery.refetch()} />
-              ) : forYouQuery.data?.length ? (
-                forYouQuery.data.map((status) => (
-                  <StatusCard key={status.id} status={status} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />
-                ))
-              ) : (
+              ) : forYouReveal.visible.length === 0 && forYouReveal.pendingCount === 0 ? (
                 <Text color="tertiary" className="px-1 py-8 text-center">{t("fediverse.forYouEmpty")}</Text>
+              ) : (
+                <>
+                  {forYouReveal.pendingCount > 0 ? (
+                    <NewPostsButton count={forYouReveal.pendingCount} onClick={forYouReveal.reveal} />
+                  ) : null}
+                  {forYouReveal.visible.map((status) => (
+                    <StatusCard key={status.id} status={status} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />
+                  ))}
+                </>
               )}
             </div>
           ) : tab === "home" ? (

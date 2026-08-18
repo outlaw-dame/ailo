@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { Settings, Trash2, WandSparkles } from "lucide-react";
@@ -5,10 +6,14 @@ import { Button, ScrollArea, Text, toast, ToolbarBackButton } from "@glaze/core/
 import { useTranslation } from "react-i18next";
 
 import { FediverseComposer } from "../components/fediverse-composer";
+import { NewPostsButton } from "../components/new-posts-button";
 import { StatusCard } from "../components/status-card";
 import { api } from "../lib/api";
 import { filterCustomFeed } from "../lib/custom-feed-match";
 import { semanticFilterService } from "../lib/semantic-filter-service";
+import { mergeById } from "../lib/timeline-merge";
+import { usePendingReveal } from "../lib/use-pending-reveal";
+import { useScrollMemory } from "../lib/use-scroll-memory";
 import { useFediverseComposerState } from "../lib/use-fediverse-composer";
 import type { CustomFeed } from "../lib/types";
 
@@ -51,12 +56,21 @@ export function FeedDetailView() {
         try { semantic = await semanticFilterService.matchPhrases(candidates, feed!.semanticKeywords); }
         catch (error) { console.warn("[custom-feed] semantic matching unavailable; exact rules remain active", error); }
       }
-      return filterCustomFeed(candidates, feed!, semantic);
+      const fresh = filterCustomFeed(candidates, feed!, semantic);
+      // Merge rather than replace — same reasoning as the home timeline (see
+      // lib/timeline-merge.ts): keeps an already-rendered post's DOM node
+      // stable across the 30s refresh instead of tearing it down mid-click.
+      const previous = queryClient.getQueryData<typeof fresh>(["fedipod", "custom-feed-timeline", feedId, feed?.updatedAt]) ?? [];
+      return mergeById(previous, fresh);
     },
     enabled: Boolean(feed),
     refetchInterval: 30_000,
     refetchOnWindowFocus: "always",
   });
+
+  const viewportRef = React.useRef<HTMLDivElement | null>(null);
+  const reveal = usePendingReveal(timeline.data, viewportRef, feedId);
+  useScrollMemory(viewportRef, `feed:${feedId}`, !timeline.isLoading);
 
   const drop = useMutation({
     mutationFn: () => api.fedipod.deleteCustomFeed(feedId),
@@ -66,6 +80,7 @@ export function FeedDetailView() {
 
   return (
     <ScrollArea
+      ref={viewportRef}
       title={feed ? "" : feedQuery.isLoading ? t("feedDetail.loading") : t("feedDetail.title")}
       leading={<ToolbarBackButton onClick={() => void navigate({ to: "/feeds" })} />}
       actions={feed ? (
@@ -108,13 +123,18 @@ export function FeedDetailView() {
           <section className="mx-6 mt-6 flex flex-col gap-3">
             {timeline.isLoading ? (
               <Text color="tertiary">{t("feedDetail.loading")}</Text>
-            ) : timeline.data?.length ? (
-              timeline.data.map((item) => (
-                <StatusCard key={item.id} status={item} ownAccountId={status.data?.account?.id} onHashtag={returnToFediverse}
-                  onReply={composer.openReply} onQuote={composer.openQuote} />
-              ))
-            ) : (
+            ) : reveal.visible.length === 0 && reveal.pendingCount === 0 ? (
               <Text color="tertiary">{t("feedDetail.empty")}</Text>
+            ) : (
+              <>
+                {reveal.pendingCount > 0 ? (
+                  <NewPostsButton count={reveal.pendingCount} onClick={reveal.reveal} />
+                ) : null}
+                {reveal.visible.map((item) => (
+                  <StatusCard key={item.id} status={item} ownAccountId={status.data?.account?.id} onHashtag={returnToFediverse}
+                    onReply={composer.openReply} onQuote={composer.openQuote} />
+                ))}
+              </>
             )}
           </section>
         </div>
