@@ -55,9 +55,9 @@ export function MediaCarousel({ attachments, onOpenExternal }: {
       </div>
       {multiple ? <>
         <Button type="button" variant="filled" size="small" iconOnly aria-label={t("media.prevAriaLabel")}
-          className="absolute left-2 top-1/2 -translate-y-1/2 shadow" onClick={() => move(-1)}><ChevronLeft /></Button>
+          className="absolute left-2 top-1/2 -translate-y-1/2 shadow" onClick={(event) => { event.stopPropagation(); move(-1); }}><ChevronLeft /></Button>
         <Button type="button" variant="filled" size="small" iconOnly aria-label={t("media.nextAriaLabel")}
-          className="absolute right-2 top-1/2 -translate-y-1/2 shadow" onClick={() => move(1)}><ChevronRight /></Button>
+          className="absolute right-2 top-1/2 -translate-y-1/2 shadow" onClick={(event) => { event.stopPropagation(); move(1); }}><ChevronRight /></Button>
         <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-white">
           <Text variant="mini" className="text-white" aria-live="polite">{t("media.position", { current: index + 1, total: media.length })}</Text>
         </div>

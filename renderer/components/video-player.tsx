@@ -60,13 +60,14 @@ export function VideoPlayer({
     {format ? <Badge className="pointer-events-none absolute left-2 top-2 bg-black/70 text-white">{format}</Badge> : null}
     {!started && !failed ? <Button type="button" variant="filled" size="large"
       className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/75 text-white shadow-lg"
-      aria-label={description ? t("media.videoAriaLabelWithDesc", { description }) : t("media.videoAriaLabel")} onClick={() => void play()}>
+      aria-label={description ? t("media.videoAriaLabelWithDesc", { description }) : t("media.videoAriaLabel")}
+      onClick={(event) => { event.stopPropagation(); void play(); }}>
       <Play /> {t("media.videoPlay")}
     </Button> : null}
     {failed ? <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/90 px-6 text-center text-white">
       <TriangleAlert className="size-5" />
       <Text variant="small" className="text-white">{t("media.videoDecodeError")}</Text>
-      {onOpenExternal ? <Button type="button" size="small" variant="filled" onClick={() => onOpenExternal(src)}>
+      {onOpenExternal ? <Button type="button" size="small" variant="filled" onClick={(event) => { event.stopPropagation(); onOpenExternal(src); }}>
         <ExternalLink /> {t("media.openMedia")}
       </Button> : null}
     </div> : null}

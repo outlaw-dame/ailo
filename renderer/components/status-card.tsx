@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import {
   Ban,
   BadgeCheck,
@@ -49,7 +49,6 @@ export function StatusCard({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const booster = status.reblog ? status.account : null;
   const s = status.reblog ?? status;
   const followTarget = booster?.group ? booster : s.account;
@@ -62,21 +61,24 @@ export function StatusCard({
   const filterKey = filterWarnings.map((result) => result.filter.id).join(",");
   React.useEffect(() => setFilterRevealed(!filterKey), [filterKey]);
 
-  // Navigate to thread view when the post body is clicked, unless a specific
-  // handler is provided (pass null to disable navigation entirely).
-  const handleCardClick = React.useCallback(
+  // Clicking the post opens its thread, unless a specific handler is
+  // provided (pass null to disable it entirely). This mirrors Phanpy: the
+  // whole card is wrapped in a real <Link> (a native <a>, not a manual
+  // onClick+tabIndex+keydown reimplementation on a plain <article> — that
+  // pattern turned out not to reliably fire in this app's WKWebView-based
+  // renderer), and every interactive element nested inside it (buttons,
+  // content links) calls stopPropagation in its own handler so it doesn't
+  // *also* trigger the card's navigation — same approach Phanpy's status
+  // card uses for its own nested spoiler/account/media buttons.
+  const isClickable = onStatusClick !== null;
+  const useDefaultNavigate = onStatusClick === undefined;
+  const handleCustomClick = React.useCallback(
     (event: React.MouseEvent<HTMLElement>) => {
-      // Don't hijack clicks on interactive elements (buttons, links, inputs).
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest("button, a, input, select, textarea, [role=button]")) return;
-      if (onStatusClick === null) return;
-      if (onStatusClick) {
-        onStatusClick(s);
-      } else {
-        void navigate({ to: "/fediverse/status/$statusId", params: { statusId: s.id } });
-      }
+      if (typeof onStatusClick === "function") onStatusClick(s);
     },
-    [navigate, onStatusClick, s],
+    [onStatusClick, s],
   );
   const invalidate = () => {    void queryClient.invalidateQueries({ queryKey: ["fedipod", "timeline"] });
     void queryClient.invalidateQueries({ queryKey: ["fedipod", "notifications"] });
@@ -170,13 +172,18 @@ export function StatusCard({
   const handleContentClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target instanceof Element ? event.target.closest("a") : null;
     if (!(target instanceof HTMLAnchorElement)) return;
+    // Any real link inside the post body — a mention, a hashtag, or a plain
+    // URL — must not *also* trigger the card's own navigate-to-thread click
+    // once the whole card is wrapped in a <Link>. Non-hashtag links keep
+    // their normal (uninterrupted) default action; only the outer card
+    // navigation is what's being suppressed here.
+    event.stopPropagation();
     const tag = hashtagFromLink({
       href: target.getAttribute("href"),
       dataHashtag: target.dataset.ailoHashtag,
     });
     if (tag && onHashtag) {
       event.preventDefault();
-      event.stopPropagation();
       onHashtag(tag);
     }
   }, [onHashtag]);
@@ -220,40 +227,14 @@ export function StatusCard({
 
   if (hiddenByFilter) return null;
 
-  const isClickable = onStatusClick !== null;
+  const cardBodyClassName = "flex flex-col gap-2.5";
+  const openThreadLabel = t("statusCard.openThread", {
+    defaultValue: "Open post by {{name}}",
+    name: s.account.displayName || s.account.acct || s.account.username,
+  });
 
-  return (
-    <article
-      className={
-        isClickable
-          ? "rounded-card border border-secondary bg-well/30 px-4 py-3.5 flex flex-col gap-2.5 cursor-pointer transition-colors hover:bg-well/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          : "rounded-card border border-secondary bg-well/30 px-4 py-3.5 flex flex-col gap-2.5"
-      }
-      tabIndex={isClickable ? 0 : undefined}
-      aria-label={
-        isClickable
-          ? t("statusCard.openThread", {
-              defaultValue: "Open post by {{name}}",
-              name: s.account.displayName || s.account.acct || s.account.username,
-            })
-          : undefined
-      }
-      onClick={isClickable ? handleCardClick : undefined}
-      onKeyDown={
-        isClickable
-          ? (event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                // Synthesise a minimal click-like event value to satisfy the callback's type.
-                handleCardClick({
-                  target: event.target,
-                  currentTarget: event.currentTarget,
-                } as unknown as React.MouseEvent<HTMLElement>);
-              }
-            }
-          : undefined
-      }
-    >
+  const cardBody = (
+    <>
       {booster ? (
         <div className="flex items-center gap-1.5 text-tertiary">
           <Repeat2 className="size-3.5 shrink-0" />
@@ -300,7 +281,7 @@ export function StatusCard({
               { name: followTarget.displayName },
             )}
             disabled={follow.isPending}
-            onClick={() => follow.mutate()}
+            onClick={(event) => { event.stopPropagation(); follow.mutate(); }}
           >
             <UserPlus />
           </Button>
@@ -313,7 +294,7 @@ export function StatusCard({
           <Text variant="small" className="min-w-0 flex-1">
             {s.spoilerText}
           </Text>
-          <Button size="small" variant="filled" onClick={() => setRevealed((v) => !v)}>
+          <Button size="small" variant="filled" onClick={(event) => { event.stopPropagation(); setRevealed((v) => !v); }}>
             {revealed ? t("statusCard.spoilerHide") : t("statusCard.spoilerShow")}
           </Button>
         </div>
@@ -327,7 +308,7 @@ export function StatusCard({
               filterNames: [...new Set(filterWarnings.map((result) => result.filter.title))].join(", "),
             })}
           </Text>
-          <Button size="small" variant="filled" onClick={() => setFilterRevealed((value) => !value)}>
+          <Button size="small" variant="filled" onClick={(event) => { event.stopPropagation(); setFilterRevealed((value) => !value); }}>
             {filterRevealed ? t("statusCard.spoilerHide") : t("statusCard.spoilerShow")}
           </Button>
         </div>
@@ -348,17 +329,17 @@ export function StatusCard({
             </Text>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button size="small" variant="filled" onClick={() => void api.app.openExternal(unsafeLink.url)}>
+            <Button size="small" variant="filled" onClick={(event) => { event.stopPropagation(); void api.app.openExternal(unsafeLink.url); }}>
               {t("statusCard.openAnyway")}
             </Button>
             <Button
               size="small"
               variant="transparent"
-              onClick={() => void api.app.openExternal("https://developers.google.com/safe-browsing/v4/advisory")}
+              onClick={(event) => { event.stopPropagation(); void api.app.openExternal("https://developers.google.com/safe-browsing/v4/advisory"); }}
             >
               {t("statusCard.safeBrowsingAdvisory")}
             </Button>
-            <Button size="small" variant="transparent" onClick={() => setUnsafeLink(null)}>{t("common.dismiss")}</Button>
+            <Button size="small" variant="transparent" onClick={(event) => { event.stopPropagation(); setUnsafeLink(null); }}>{t("common.dismiss")}</Button>
           </div>
         </div>
       ) : null}
@@ -383,7 +364,8 @@ export function StatusCard({
             <div
               role="button"
               tabIndex={0}
-              onClick={() => {
+              onClick={(event) => {
+                event.stopPropagation();
                 if (s.card) void openExternalChecked(s.card.url);
               }}
               onKeyDown={(event) => {
@@ -466,7 +448,7 @@ export function StatusCard({
               </Text> : null}
               {translation.isError ? <div className="flex items-center gap-2">
                 <Text variant="small" color="danger">{actionableError(translation.error, t("statusCard.translateError"))}</Text>
-                <Button size="small" variant="transparent" onClick={() => void translation.refetch()}>{t("common.retry")}</Button>
+                <Button size="small" variant="transparent" onClick={(event) => { event.stopPropagation(); void translation.refetch(); }}>{t("common.retry")}</Button>
               </div> : null}
             </div>
           ) : null}
@@ -488,6 +470,45 @@ export function StatusCard({
           ) : null}
         </>
       ) : null}
+    </>
+  );
+
+  return (
+    <article
+      className={
+        useDefaultNavigate || isClickable
+          ? "rounded-card border border-secondary bg-well/30 px-4 py-3.5 flex flex-col gap-2.5 transition-colors hover:bg-well/60"
+          : "rounded-card border border-secondary bg-well/30 px-4 py-3.5 flex flex-col gap-2.5"
+      }
+    >
+      {useDefaultNavigate ? (
+        <Link
+          to="/fediverse/status/$statusId"
+          params={{ statusId: s.id }}
+          className={`${cardBodyClassName} cursor-pointer text-inherit no-underline rounded-control outline-none focus-visible:ring-2 focus-visible:ring-accent`}
+          aria-label={openThreadLabel}
+        >
+          {cardBody}
+        </Link>
+      ) : isClickable ? (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label={openThreadLabel}
+          className={`${cardBodyClassName} cursor-pointer`}
+          onClick={handleCustomClick}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              handleCustomClick(event as unknown as React.MouseEvent<HTMLElement>);
+            }
+          }}
+        >
+          {cardBody}
+        </div>
+      ) : (
+        <div className={cardBodyClassName}>{cardBody}</div>
+      )}
 
       <div className="flex flex-wrap items-center gap-1 -ml-1.5 text-tertiary">
         <Button size="small" variant="transparent" onClick={() => onReply?.(s)}>
