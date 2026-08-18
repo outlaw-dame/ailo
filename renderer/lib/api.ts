@@ -211,6 +211,8 @@ export const api = {
       ipc().invoke("fedipod:boost", id, active) as Promise<MastodonStatus>,
     pin: (id: string, active: boolean) =>
       ipc().invoke("fedipod:pin", id, active) as Promise<MastodonStatus>,
+    bookmark: (id: string, active: boolean) =>
+      ipc().invoke("fedipod:bookmark", id, active) as Promise<MastodonStatus>,
     follow: (id: string, active: boolean) =>
       ipc().invoke("fedipod:follow", id, active) as Promise<{ following: boolean }>,
     crossPost: (postId: string, visibility?: FediverseVisibility) =>

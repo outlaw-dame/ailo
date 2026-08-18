@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   Ban,
   BadgeCheck,
+  Bookmark,
   ExternalLink,
   Heart,
   Languages,
@@ -133,6 +134,14 @@ export function StatusCard({
     onSuccess: (data) => {
       patchStatusInCaches(queryClient, s.id, { pinned: data.pinned });
       toast.success(data.pinned ? t("statusCard.pinned") : t("statusCard.unpinned"));
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const bookmark = useMutation({
+    mutationFn: () => api.fedipod.bookmark(s.id, !s.bookmarked),
+    onSuccess: (data) => {
+      patchStatusInCaches(queryClient, s.id, { bookmarked: data.bookmarked });
+      toast.success(data.bookmarked ? t("statusCard.bookmarked") : t("statusCard.unbookmarked"));
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -519,6 +528,16 @@ export function StatusCard({
         >
           <Heart />
           <span className="tabular-nums">{s.favouritesCount || ""}</span>
+        </Button>
+        <Button
+          size="small"
+          variant="transparent"
+          className={s.bookmarked ? "text-primary" : undefined}
+          disabled={bookmark.isPending}
+          aria-label={s.bookmarked ? t("statusCard.unbookmarkAriaLabel") : t("statusCard.bookmarkAriaLabel")}
+          onClick={() => bookmark.mutate()}
+        >
+          <Bookmark />
         </Button>
         {aiStatus.data?.translationProviders.length ? (
           <Button

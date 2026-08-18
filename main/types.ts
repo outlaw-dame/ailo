@@ -169,6 +169,7 @@ export interface MastodonStatus {
   favourited: boolean;
   reblogged: boolean;
   pinned: boolean;
+  bookmarked: boolean;
   inReplyToId: string | null;
   /** Present when this status boosts another */
   reblog: MastodonStatus | null;

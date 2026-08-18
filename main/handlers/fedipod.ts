@@ -412,6 +412,10 @@ export function registerFediPodHandlers(): void {
     return fediPodService.setPin(requireString(id, "backendFields.statusId"), active !== false);
   });
 
+  ipcMain.handle("fedipod:bookmark", async (_event, id: unknown, active: unknown) => {
+    return fediPodService.setBookmark(requireString(id, "backendFields.statusId"), active !== false);
+  });
+
   ipcMain.handle("fedipod:follow", async (_event, id: unknown, active: unknown) => {
     return fediPodService.setFollow(requireString(id, "backendFields.accountId"), active !== false);
   });

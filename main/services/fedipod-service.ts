@@ -250,6 +250,7 @@ export function mapStatus(raw: unknown, depth = 0): MastodonStatus {
     favourited: bool(r.favourited),
     reblogged: bool(r.reblogged),
     pinned: bool(r.pinned),
+    bookmarked: bool(r.bookmarked),
     inReplyToId: typeof r.in_reply_to_id === "string" ? r.in_reply_to_id : null,
     reblog: depth === 0 && isRecord(r.reblog) ? mapStatus(r.reblog, 1) : null,
     ...mapQuoteMetadata(r, (quoted) => depth === 0 && isRecord(quoted) ? mapStatus(quoted, 1) : null),
@@ -1350,6 +1351,14 @@ class FediPodService {
   async setPin(id: string, active: boolean): Promise<MastodonStatus> {
     const raw = await this.authed(
       `/api/v1/statuses/${encodeURIComponent(id)}/${active ? "pin" : "unpin"}`,
+      { method: "POST" },
+    );
+    return mapStatus(raw);
+  }
+
+  async setBookmark(id: string, active: boolean): Promise<MastodonStatus> {
+    const raw = await this.authed(
+      `/api/v1/statuses/${encodeURIComponent(id)}/${active ? "bookmark" : "unbookmark"}`,
       { method: "POST" },
     );
     return mapStatus(raw);

@@ -131,6 +131,7 @@ export interface MastodonStatus {
   favourited: boolean;
   reblogged: boolean;
   pinned: boolean;
+  bookmarked: boolean;
   inReplyToId: string | null;
   reblog: MastodonStatus | null;
   quote: { state: string; quotedStatus: MastodonStatus | null } | null;

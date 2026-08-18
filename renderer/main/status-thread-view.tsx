@@ -8,6 +8,7 @@ import { Button, ScrollArea, Text, ToolbarBackButton } from "@glaze/core/compone
 import { StatusCard } from "../components/status-card";
 import { FediverseComposer } from "../components/fediverse-composer";
 import { api } from "../lib/api";
+import { mergeById } from "../lib/timeline-merge";
 import { useFediverseComposerState } from "../lib/use-fediverse-composer";
 import type { MastodonStatus } from "../lib/types";
 
@@ -174,7 +175,19 @@ export function StatusThreadView() {
   // the timeline cache (so the focal post renders immediately).
   const contextQuery = useQuery({
     queryKey: ["fedipod", "status-context", statusId],
-    queryFn: () => api.fedipod.statusContext(statusId),
+    queryFn: async () => {
+      const fresh = await api.fedipod.statusContext(statusId);
+      // Merge rather than replace, same reasoning as the home timeline (see
+      // lib/timeline-merge.ts): keeps an already-rendered reply's DOM node
+      // stable across the 15s refresh instead of tearing it down mid-click.
+      const previous = queryClient.getQueryData<typeof fresh>(["fedipod", "status-context", statusId]);
+      if (!previous) return fresh;
+      return {
+        status: fresh.status,
+        ancestors: mergeById(previous.ancestors, fresh.ancestors),
+        descendants: mergeById(previous.descendants, fresh.descendants),
+      };
+    },
     // Context stale quickly — new replies come in.
     staleTime: 15_000,
     refetchOnWindowFocus: "always",

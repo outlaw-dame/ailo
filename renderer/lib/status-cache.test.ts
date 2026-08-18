@@ -11,7 +11,7 @@ const status = (id: string, overrides: Partial<MastodonStatus> = {}): MastodonSt
     displayName: "a", url: "", avatar: "", note: "", followersCount: 0, followingCount: 0, group: false },
   mediaAttachments: [], card: null, favouritesCount: 0, reblogsCount: 0, repliesCount: 0,
   quotesCount: 0,
-  favourited: false, reblogged: false, pinned: false, inReplyToId: null, reblog: null,
+  favourited: false, reblogged: false, pinned: false, bookmarked: false, inReplyToId: null, reblog: null,
   quote: null, quoteApproval: null,
   ...overrides,
 });

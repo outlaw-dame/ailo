@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AtSign, Bell, Compass, Hash, Home, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowUp, AtSign, Bell, Compass, Hash, Home, RefreshCw, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -22,6 +22,9 @@ import { feedRefreshInterval } from "../lib/feed-refresh";
 import { formatRelativeDate } from "../lib/markdown";
 import { semanticFilterService } from "../lib/semantic-filter-service";
 import { filterCustomFeed } from "../lib/custom-feed-match";
+import { mergeById } from "../lib/timeline-merge";
+import { usePendingReveal } from "../lib/use-pending-reveal";
+import { useScrollMemory } from "../lib/use-scroll-memory";
 import { useFediverseComposerState } from "../lib/use-fediverse-composer";
 
 type Tab = "for-you" | "home" | "tag-feed" | "notifications" | "discover" | "tags";
@@ -33,6 +36,23 @@ function FeedSkeleton() {
         <div key={i} className="h-28 w-full animate-pulse rounded-card bg-control-subtle" />
       ))}
     </div>
+  );
+}
+
+/** Phanpy-style "N new posts" affordance shown instead of silently inserting
+ * freshly-arrived posts above whatever the reader is currently looking at. */
+function NewPostsButton({ count, onClick }: { count: number; onClick: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <Button
+      size="small"
+      variant="accent"
+      className="sticky top-0 z-10 self-center"
+      onClick={onClick}
+    >
+      <ArrowUp />
+      {t("fediverse.newPosts", { count })}
+    </Button>
   );
 }
 
@@ -83,7 +103,14 @@ export function FediverseView() {
         api.fedipod.timeline(),
         api.fedipod.filters(),
       ]);
-      return semanticFilterService.apply(statuses, filters, "home");
+      const fresh = await semanticFilterService.apply(statuses, filters, "home");
+      // Merge rather than replace: a fast-moving home timeline can easily
+      // push more than a page's worth of new posts within one poll interval,
+      // and swapping the array wholesale would tear down and recreate the
+      // DOM node of a post the reader is mid-click on, silently eating the
+      // click. See lib/timeline-merge.ts.
+      const previous = queryClient.getQueryData<typeof fresh>(["fedipod", "timeline"]) ?? [];
+      return mergeById(previous, fresh);
     },
     enabled: fedipodReady && tab === "home",
     refetchInterval: (query) => feedRefreshInterval(query.state.fetchFailureCount),
@@ -97,7 +124,9 @@ export function FediverseView() {
         api.fedipod.tagTimeline(selectedTag),
         api.fedipod.filters(),
       ]);
-      return semanticFilterService.apply(statuses, filters, "home");
+      const fresh = await semanticFilterService.apply(statuses, filters, "home");
+      const previous = queryClient.getQueryData<typeof fresh>(["fedipod", "tag-timeline", selectedTag]) ?? [];
+      return mergeById(previous, fresh);
     },
     enabled: fedipodReady && tab === "tag-feed" && Boolean(selectedTag),
     refetchInterval: (query) => feedRefreshInterval(query.state.fetchFailureCount),
@@ -115,7 +144,8 @@ export function FediverseView() {
         filters,
         "notifications",
       );
-      return notifications;
+      const previous = queryClient.getQueryData<typeof notifications>(["fedipod", "notifications"]) ?? [];
+      return mergeById(previous, notifications);
     },
     enabled: fedipodReady && tab === "notifications",
     refetchInterval: (query) => feedRefreshInterval(query.state.fetchFailureCount),
@@ -189,6 +219,24 @@ export function FediverseView() {
     };
   }, [connected]);
 
+  // New posts merge in behind the scenes (see the timeline queries above),
+  // but stay hidden behind a "N new posts" affordance unless the reader is
+  // already at the top — otherwise a background refresh would insert content
+  // above whatever they're currently reading and yank their scroll position
+  // with it. Persisting scroll position per-tab (and, for Home specifically,
+  // across restarts) is what "remain the spot of last read" needs on top of
+  // that: switching tabs, navigating away, or quitting and relaunching all
+  // leave the reader where they left off instead of snapping back to the top.
+  const homeReveal = usePendingReveal(timelineQuery.data, viewportRef, "home");
+  const tagReveal = usePendingReveal(tagTimelineQuery.data, viewportRef, selectedTag);
+  const scrollKey = tab === "tag-feed" ? `tag:${selectedTag ?? ""}` : tab;
+  const scrollReady =
+    tab === "home" ? !timelineQuery.isLoading
+    : tab === "tag-feed" ? !tagTimelineQuery.isLoading
+    : tab === "notifications" ? !notificationsQuery.isLoading
+    : true;
+  useScrollMemory(viewportRef, scrollKey, scrollReady, { persist: tab === "home" });
+
   if (!connected) {
     return (
       <ScrollArea
@@ -214,8 +262,8 @@ export function FediverseView() {
   }
 
   const account = statusQuery.data?.account;
-  const timeline = timelineQuery.data ?? [];
-  const tagTimeline = tagTimelineQuery.data ?? [];
+  const timeline = homeReveal.visible;
+  const tagTimeline = tagReveal.visible;
   const notifications = notificationsQuery.data ?? [];
   const capabilities = capabilitiesQuery.data;
 
@@ -303,12 +351,15 @@ export function FediverseView() {
               <FeedSkeleton />
             ) : timelineQuery.isError ? (
               <ErrorNote message={(timelineQuery.error as Error).message} onRetry={refresh} />
-            ) : timeline.length === 0 ? (
+            ) : timeline.length === 0 && homeReveal.pendingCount === 0 ? (
               <Text color="tertiary" className="px-1 py-8 text-center">
                 {t("fediverse.homeEmpty")}
               </Text>
             ) : (
               <div className="flex flex-col gap-3">
+                {homeReveal.pendingCount > 0 ? (
+                  <NewPostsButton count={homeReveal.pendingCount} onClick={homeReveal.reveal} />
+                ) : null}
                 {timeline.map((s) => (
                   <StatusCard key={s.id} status={s} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />
                 ))}
@@ -330,14 +381,19 @@ export function FediverseView() {
                 <FeedSkeleton />
               ) : tagTimelineQuery.isError ? (
                 <ErrorNote message={(tagTimelineQuery.error as Error).message} onRetry={refresh} />
-              ) : tagTimeline.length === 0 ? (
+              ) : tagTimeline.length === 0 && tagReveal.pendingCount === 0 ? (
                 <Text color="tertiary" className="px-1 py-8 text-center">
                   {t("fediverse.tagFeedEmpty", { tag: selectedTag })}
                 </Text>
               ) : (
-                tagTimeline.map((s) => (
-                  <StatusCard key={s.id} status={s} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />
-                ))
+                <>
+                  {tagReveal.pendingCount > 0 ? (
+                    <NewPostsButton count={tagReveal.pendingCount} onClick={tagReveal.reveal} />
+                  ) : null}
+                  {tagTimeline.map((s) => (
+                    <StatusCard key={s.id} status={s} ownAccountId={account?.id} onReply={openReply} onQuote={openQuote} onHashtag={openHashtag} />
+                  ))}
+                </>
               )}
             </div>
           ) : tab === "notifications" ? (
