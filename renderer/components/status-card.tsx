@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Ban,
   BadgeCheck,
@@ -49,6 +49,7 @@ export function StatusCard({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const booster = status.reblog ? status.account : null;
   const s = status.reblog ?? status;
   const followTarget = booster?.group ? booster : s.account;
@@ -62,16 +63,36 @@ export function StatusCard({
   React.useEffect(() => setFilterRevealed(!filterKey), [filterKey]);
 
   // Clicking the post opens its thread, unless a specific handler is
-  // provided (pass null to disable it entirely). This mirrors Phanpy: the
-  // whole card is wrapped in a real <Link> (a native <a>, not a manual
-  // onClick+tabIndex+keydown reimplementation on a plain <article> — that
-  // pattern turned out not to reliably fire in this app's WKWebView-based
-  // renderer), and every interactive element nested inside it (buttons,
-  // content links) calls stopPropagation in its own handler so it doesn't
-  // *also* trigger the card's navigation — same approach Phanpy's status
-  // card uses for its own nested spoiler/account/media buttons.
+  // provided (pass null to disable it entirely). Mirrors Phanpy's structure
+  // (the whole card wrapped in a real <Link>, with nested interactive
+  // elements stopping their own propagation instead of the card guarding
+  // against them) — but drives the actual navigation through an explicit
+  // onClick calling router.navigate() imperatively, rather than trusting the
+  // Link's own href-based default action. TanStack Router's Link composes a
+  // passed-in onClick *before* its internal handler and skips its own
+  // navigation once the event is already defaultPrevented, so this replaces
+  // rather than duplicates it. Belt-and-suspenders: the real <a href> still
+  // gives native hover/focus/keyboard/cmd-click semantics either way, but
+  // the actual navigation goes through the exact mechanism already proven
+  // to work elsewhere in this app (sidebar nav, the card's own action
+  // buttons) rather than whatever's different about a plain anchor click in
+  // this app's WKWebView renderer.
   const isClickable = onStatusClick !== null;
   const useDefaultNavigate = onStatusClick === undefined;
+  const handleLinkClick = React.useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+      // TEMP DIAGNOSTIC — remove once click-to-thread is confirmed working.
+      // If this toast never appears on click, the event isn't reaching this
+      // handler at all (something upstream of the card, not the navigation
+      // mechanism itself). If it appears but the thread view doesn't open,
+      // the problem is in navigate()/the route, not the click.
+      toast.success("card click reached handleLinkClick");
+      event.preventDefault();
+      void navigate({ to: "/fediverse/status/$statusId", params: { statusId: s.id } });
+    },
+    [navigate, s.id],
+  );
   const handleCustomClick = React.useCallback(
     (event: React.MouseEvent<HTMLElement>) => {
       const target = event.target instanceof Element ? event.target : null;
@@ -495,6 +516,7 @@ export function StatusCard({
         <Link
           to="/fediverse/status/$statusId"
           params={{ statusId: s.id }}
+          onClick={handleLinkClick}
           className={`${cardBodyClassName} cursor-pointer text-inherit no-underline rounded-control outline-none focus-visible:ring-2 focus-visible:ring-accent`}
           aria-label={openThreadLabel}
         >
