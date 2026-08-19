@@ -359,82 +359,6 @@ export function StatusCard({
             dangerouslySetInnerHTML={{ __html: renderFediverseContent(s) }}
             onClick={handleContentClick}
           />
-          <MediaCarousel attachments={media} onOpenExternal={(url) => void openExternalChecked(url)} />
-          {media.length === 0 && s.card && s.card.url ? (
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (s.card) void openExternalChecked(s.card.url);
-              }}
-              onKeyDown={(event) => {
-                if ((event.key === "Enter" || event.key === " ") && s.card) {
-                  event.preventDefault();
-                  void openExternalChecked(s.card.url);
-                }
-              }}
-              className="flex cursor-pointer flex-col gap-2 overflow-hidden rounded-control border border-secondary text-left transition-colors hover:bg-control-subtle/60"
-            >
-              {s.card.image ? (
-                <img
-                  src={s.card.image}
-                  alt=""
-                  className="max-h-48 w-full object-cover"
-                  loading="lazy"
-                />
-              ) : null}
-              <div className="flex flex-col gap-1 px-3 py-2.5">
-                <Text variant="small-strong" truncate>
-                  {s.card.title || s.card.url}
-                </Text>
-                {s.card.description ? (
-                  <Text variant="mini" color="tertiary" className="line-clamp-2">
-                    {s.card.description}
-                  </Text>
-                ) : null}
-                {s.card.providerName ? (
-                  <Text variant="mini" color="quaternary" truncate>{s.card.providerName}</Text>
-                ) : null}
-                {s.card.authors.length > 0 ? (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      const target = s.card?.authors[0]?.account?.url || s.card?.authors[0]?.url;
-                      if (target) void openExternalChecked(target);
-                    }}
-                    className="mt-1 flex w-fit items-center gap-1.5 text-tertiary hover:text-primary"
-                  >
-                    <BadgeCheck className="size-3.5 shrink-0" />
-                    <Text variant="mini" color="tertiary" truncate>
-                      {t("statusCard.creditedTo", {
-                        handle: s.card.authors[0]?.account
-                          ? `@${s.card.authors[0].account.acct || s.card.authors[0].account.username}`
-                          : s.card.authors[0]?.name,
-                      })}
-                    </Text>
-                  </button>
-                ) : null}
-                {s.card.missingAttribution ? (
-                  <div className="mt-1 flex items-center gap-1.5 text-danger">
-                    <ShieldAlert className="size-3.5 shrink-0" />
-                    <Text variant="mini" color="danger">
-                      {t("statusCard.missingAttribution")}
-                    </Text>
-                  </div>
-                ) : null}
-                {aiStatus.data?.safeBrowsingEnabled ? (
-                  <div className="mt-1 flex items-start gap-1.5 text-tertiary">
-                    <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
-                    <Text variant="mini" color="tertiary">
-                      {t("statusCard.safeBrowsingNote")}
-                    </Text>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
           {translationVisible ? (
             <div className="flex flex-col gap-1 rounded-control border border-dashed border-secondary px-3 py-2" aria-live="polite">
               <Text variant="mini" color="tertiary">
@@ -473,6 +397,92 @@ export function StatusCard({
     </>
   );
 
+  // Media and the link-preview card render outside the clickable Link
+  // entirely — not just stopPropagation'd within it — so a native <video>/
+  // <audio> element is never a descendant of a real <a>, which is its own
+  // source of WKWebView playback/control quirks independent of anything
+  // about *whose* click reaches where. It's also the more correct UX
+  // regardless: clicking media should play/expand it, not navigate away.
+  const mediaAndCard = revealed && filterRevealed ? (
+    <>
+      <MediaCarousel attachments={media} onOpenExternal={(url) => void openExternalChecked(url)} />
+      {media.length === 0 && s.card && s.card.url ? (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (s.card) void openExternalChecked(s.card.url);
+          }}
+          onKeyDown={(event) => {
+            if ((event.key === "Enter" || event.key === " ") && s.card) {
+              event.preventDefault();
+              void openExternalChecked(s.card.url);
+            }
+          }}
+          className="flex cursor-pointer flex-col gap-2 overflow-hidden rounded-control border border-secondary text-left transition-colors hover:bg-control-subtle/60"
+        >
+          {s.card.image ? (
+            <img
+              src={s.card.image}
+              alt=""
+              className="max-h-48 w-full object-cover"
+              loading="lazy"
+            />
+          ) : null}
+          <div className="flex flex-col gap-1 px-3 py-2.5">
+            <Text variant="small-strong" truncate>
+              {s.card.title || s.card.url}
+            </Text>
+            {s.card.description ? (
+              <Text variant="mini" color="tertiary" className="line-clamp-2">
+                {s.card.description}
+              </Text>
+            ) : null}
+            {s.card.providerName ? (
+              <Text variant="mini" color="quaternary" truncate>{s.card.providerName}</Text>
+            ) : null}
+            {s.card.authors.length > 0 ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const target = s.card?.authors[0]?.account?.url || s.card?.authors[0]?.url;
+                  if (target) void openExternalChecked(target);
+                }}
+                className="mt-1 flex w-fit items-center gap-1.5 text-tertiary hover:text-primary"
+              >
+                <BadgeCheck className="size-3.5 shrink-0" />
+                <Text variant="mini" color="tertiary" truncate>
+                  {t("statusCard.creditedTo", {
+                    handle: s.card.authors[0]?.account
+                      ? `@${s.card.authors[0].account.acct || s.card.authors[0].account.username}`
+                      : s.card.authors[0]?.name,
+                  })}
+                </Text>
+              </button>
+            ) : null}
+            {s.card.missingAttribution ? (
+              <div className="mt-1 flex items-center gap-1.5 text-danger">
+                <ShieldAlert className="size-3.5 shrink-0" />
+                <Text variant="mini" color="danger">
+                  {t("statusCard.missingAttribution")}
+                </Text>
+              </div>
+            ) : null}
+            {aiStatus.data?.safeBrowsingEnabled ? (
+              <div className="mt-1 flex items-start gap-1.5 text-tertiary">
+                <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />
+                <Text variant="mini" color="tertiary">
+                  {t("statusCard.safeBrowsingNote")}
+                </Text>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </>
+  ) : null;
+
   return (
     <article
       className={
@@ -509,6 +519,8 @@ export function StatusCard({
       ) : (
         <div className={cardBodyClassName}>{cardBody}</div>
       )}
+
+      {mediaAndCard}
 
       <div className="flex flex-wrap items-center gap-1 -ml-1.5 text-tertiary">
         <Button size="small" variant="transparent" onClick={() => onReply?.(s)}>
