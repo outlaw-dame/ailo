@@ -2,6 +2,7 @@ import { ipcMain, logger } from "@glaze/core/backend";
 
 import { postsStore } from "../services/posts-store.js";
 import { solidService } from "../services/solid-service.js";
+import { postNotFoundError, requireString } from "../services/handler-validation.js";
 
 export function registerSolidHandlers(): void {
   ipcMain.handle("solid:connect", async (_event, issuer: unknown) => {
@@ -31,11 +32,11 @@ export function registerSolidHandlers(): void {
     return solidService.getStatus();
   });
 
-  ipcMain.handle("solid:publishPost", async (_event, postId: unknown) => {
-    if (typeof postId !== "string" || !postId) throw new Error("Post id is required");
+  ipcMain.handle("solid:publishPost", async (_event, rawPostId: unknown) => {
+    const postId = requireString(rawPostId, "backendFields.postId");
     try {
       const post = await postsStore.get(postId);
-      if (!post) throw new Error(`Post not found: ${postId}`);
+      if (!post) throw postNotFoundError(postId);
       const result = await solidService.publishPost(post);
       const updated = await postsStore.markPublished(postId, { solidUrl: result.url });
       return { post: updated, url: result.url };

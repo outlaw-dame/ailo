@@ -5,6 +5,7 @@ import { TooltipProvider, Toaster } from "@glaze/core/components";
 import { initLogging } from "@glaze/core/utils";
 import { SettingsView } from "./settings-view";
 import "../styles.css";
+import "../lib/i18n";
 
 initLogging();
 

@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Badge, Text } from "@glaze/core/components";
 
 import {
@@ -19,16 +20,17 @@ interface StoryCoverProps {
  * Tiny-blog intimacy in the deck (short excerpt) underneath.
  */
 export function StoryCover({ post }: StoryCoverProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const image = firstImageSrc(post.body);
   const mesh = `knot-mesh-${meshIndexForId(post.id)}`;
   const deck = post.contentWarning
     ? post.contentWarning
-    : excerptFromBody(post.body, 180) || "Open to read";
+    : excerptFromBody(post.body, 180) || t("storyCover.openToRead");
   const alt =
     post.altTexts.find((entry) => entry.src === image)?.alt ||
     post.title ||
-    "Cover image";
+    t("storyCover.coverImageAlt");
 
   return (
     <button
@@ -37,7 +39,7 @@ export function StoryCover({ post }: StoryCoverProps) {
         void navigate({ to: "/post/$postId", params: { postId: post.id } });
       }}
       className="group relative w-full overflow-hidden rounded-card text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      aria-label={`Open story: ${post.title || "Untitled"}`}
+      aria-label={t("storyCover.openAriaLabel", { title: post.title || t("storyCover.untitled") })}
     >
       <div className={`relative min-h-[320px] w-full ${image ? "" : mesh}`}>
         {image ? (
@@ -53,13 +55,13 @@ export function StoryCover({ post }: StoryCoverProps) {
         <div className="relative z-10 flex min-h-[320px] flex-col justify-end gap-3 p-7 sm:p-9">
           <div className="flex flex-wrap items-center gap-2">
             <Badge color={post.status === "published" ? "orange" : "secondary"} size="small">
-              {post.status === "published" ? "Cover story" : "Draft"}
+              {post.status === "published" ? t("storyCover.publishedBadge") : t("storyCover.draftBadge")}
             </Badge>
             {post.contentWarning ? (
               <Badge color="yellow" size="small">
                 <span className="inline-flex items-center gap-1">
                   <AlertTriangle className="size-3" />
-                  CW
+                  {t("storyCover.cwBadge")}
                 </span>
               </Badge>
             ) : null}
@@ -75,7 +77,7 @@ export function StoryCover({ post }: StoryCoverProps) {
             variant="heading1"
             className="max-w-2xl text-balance text-[color-mix(in_oklab,var(--bg)_96%,white)]!"
           >
-            {post.title || "Untitled"}
+            {post.title || t("storyCover.untitled")}
           </Text>
 
           <Text
@@ -91,7 +93,7 @@ export function StoryCover({ post }: StoryCoverProps) {
             className="tabular-nums text-[color-mix(in_oklab,var(--bg)_70%,white)]!"
           >
             {formatRelativeDate(post.updatedAt)}
-            {post.githubPath || post.solidUrl ? " · Shared" : ""}
+            {post.githubPath || post.solidUrl ? ` · ${t("storyCover.shared")}` : ""}
           </Text>
         </div>
       </div>

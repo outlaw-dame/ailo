@@ -1,7 +1,8 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { Eye, ImagePlus, Plus, Save, Send, X } from "lucide-react";
+import { Eye, ImagePlus, Plus, Save, Send, Sparkles, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   Button,
   Field,
@@ -18,6 +19,7 @@ import {
 } from "@glaze/core/components";
 
 import { MarkdownPreview } from "../components/markdown-preview";
+import { AiProviderControl, useAiProvider } from "../components/ai-provider-control";
 import { api } from "../lib/api";
 import { extractImageSources } from "../lib/markdown";
 import type { ImageAltText, Post } from "../lib/types";
@@ -33,6 +35,7 @@ function mergeAltTexts(body: string, existing: ImageAltText[]): ImageAltText[] {
 }
 
 export function EditorView() {
+  const { t } = useTranslation();
   const params = useParams({ strict: false }) as { postId?: string };
   const postId = params.postId;
   const isEditing = Boolean(postId);
@@ -54,17 +57,29 @@ export function EditorView() {
   const [mode, setMode] = React.useState<EditorMode>("write");
   const [hydratedId, setHydratedId] = React.useState<string | null>(null);
   const [manualAltSrc, setManualAltSrc] = React.useState("");
+  const [suggestedTags, setSuggestedTags] = React.useState<string[]>([]);
+
+  const aiStatus = useQuery({ queryKey: ["fedipod", "ai", "status"], queryFn: api.ai.status });
+  const [aiProvider, setAiProvider] = useAiProvider(aiStatus.data);
+  const suggestHashtags = useMutation({
+    mutationFn: () => api.ai.suggestHashtags(`${title}\n\n${body}`, aiProvider ?? undefined),
+    onSuccess: (hashtags) => setSuggestedTags(hashtags),
+    onError: (error: Error) => toast.error(error.message || t("editor.hashtagError")),
+  });
+  const currentTags = new Set(tagsInput.split(",").map((tag) => tag.trim().toLowerCase()).filter(Boolean));
+  const addSuggestedTag = (tag: string) => {
+    setTagsInput((prev) => (prev.trim() ? `${prev.trim()}, ${tag}` : tag));
+    setSuggestedTags((prev) => prev.filter((entry) => entry !== tag));
+  };
 
   React.useEffect(() => {
     if (!postId) {
       setTitle("");
-      setBody(
-        "Knowledge compounds when it is written down and shared.\n\nWrite in **Markdown**, drop in <em>HTML</em>, and use emoji freely.\n\n> A tiny paper is enough — one clear idea, carefully told.\n\n![Morning light over open water](https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1400)\n",
-      );
+      setBody(t("editor.defaultBody"));
       setContentWarningEnabled(false);
       setContentWarning("");
       setAltTexts([]);
-      setTagsInput("knowledge, open-web");
+      setTagsInput(t("editor.defaultTags"));
       setHydratedId(null);
       return;
     }
@@ -77,7 +92,7 @@ export function EditorView() {
     setAltTexts(post.altTexts);
     setTagsInput(post.tags.join(", "));
     setHydratedId(post.id);
-  }, [postId, existingQuery.data, hydratedId]);
+  }, [postId, existingQuery.data, hydratedId, t]);
 
   React.useEffect(() => {
     setAltTexts((current) => mergeAltTexts(body, current));
@@ -91,9 +106,9 @@ export function EditorView() {
   const saveMutation = useMutation({
     mutationFn: async (status: "draft" | "published") => {
       const payload = {
-        title: title.trim() || "Untitled",
+        title: title.trim() || t("postDetail.untitled"),
         body,
-        contentWarning: contentWarningEnabled ? contentWarning.trim() || "Sensitive content" : null,
+        contentWarning: contentWarningEnabled ? contentWarning.trim() || t("composer.cwDefaultText") : null,
         altTexts,
         tags,
         status: status === "draft" ? ("draft" as const) : undefined,
@@ -121,15 +136,15 @@ export function EditorView() {
     onSuccess: async (result, status) => {
       await queryClient.invalidateQueries({ queryKey: ["posts"] });
       if (status === "published") {
-        const bits: string[] = ["Published locally"];
+        const bits: string[] = [t("editor.publishedLocally")];
         if (result.results && "solid" in result.results && result.results.solid) {
-          bits.push(result.results.solid.ok ? "Solid Pod" : `Solid failed`);
+          bits.push(result.results.solid.ok ? t("editor.solidSuccess") : t("editor.solidFailed"));
         }
         if (result.results && "github" in result.results && result.results.github) {
-          bits.push(result.results.github.ok ? "GitHub" : `GitHub failed`);
+          bits.push(result.results.github.ok ? t("editor.githubSuccess") : t("editor.githubFailed"));
         }
         if (result.results && "fediverse" in result.results && result.results.fediverse) {
-          bits.push(result.results.fediverse.ok ? "Fediverse" : `Fediverse failed`);
+          bits.push(result.results.fediverse.ok ? t("editor.fediverseSuccess") : t("editor.fediverseFailed"));
         }
         toast.success(bits.join(" · "));
         if (
@@ -157,12 +172,12 @@ export function EditorView() {
           toast.error(result.results.fediverse.error);
         }
       } else {
-        toast.success("Draft saved");
+        toast.success(t("editor.draftSaved"));
       }
       void navigate({ to: "/post/$postId", params: { postId: result.post.id } });
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Could not save note");
+      toast.error(error.message || t("editor.saveError"));
     },
   });
 
@@ -170,8 +185,8 @@ export function EditorView() {
 
   return (
     <ScrollArea
-      title={isEditing ? "Edit story" : "Compose"}
-      subtitle="Markdown · HTML · emoji — a tiny paper"
+      title={isEditing ? t("editor.titleEdit") : t("editor.titleNew")}
+      subtitle={t("editor.subtitle")}
       leading={
         <ToolbarBackButton
           onClick={() => {
@@ -188,12 +203,12 @@ export function EditorView() {
             size="small"
             value={mode}
             onValueChange={(value) => setMode(value as EditorMode)}
-            aria-label="Editor mode"
+            aria-label={t("editor.editorModeAriaLabel")}
           >
-            <SegmentedControlItem value="write">Write</SegmentedControlItem>
+            <SegmentedControlItem value="write">{t("editor.tabWrite")}</SegmentedControlItem>
             <SegmentedControlItem value="preview">
               <Eye />
-              Preview
+              {t("editor.tabPreview")}
             </SegmentedControlItem>
           </SegmentedControl>
           <Button
@@ -203,7 +218,7 @@ export function EditorView() {
             onClick={() => saveMutation.mutate("draft")}
           >
             <Save />
-            Save draft
+            {t("editor.saveDraft")}
           </Button>
           <Button
             size="small"
@@ -212,7 +227,7 @@ export function EditorView() {
             onClick={() => saveMutation.mutate("published")}
           >
             <Send />
-            Publish
+            {t("editor.publish")}
           </Button>
         </div>
       }
@@ -222,18 +237,18 @@ export function EditorView() {
         <Input
           value={title}
           onChange={(event) => setTitle(event.target.value)}
-          placeholder="Title"
+          placeholder={t("editor.titlePlaceholder")}
           size="large"
           className="text-heading2! font-normal! h-auto! py-2!"
-          aria-label="Title"
+          aria-label={t("editor.titlePlaceholder")}
         />
 
         {mode === "write" ? (
           <textarea
             value={body}
             onChange={(event) => setBody(event.target.value)}
-            placeholder="Write freely. Markdown, HTML, and emoji all work."
-            aria-label="Body"
+            placeholder={t("editor.bodyPlaceholder")}
+            aria-label={t("editor.bodyAriaLabel")}
             spellCheck
             className="w-full min-h-[320px] max-h-[60vh] resize-y rounded-control border border-field bg-transparent px-3 py-3 text-regular leading-relaxed text-primary outline-none focus:border-foreground-40 placeholder:text-quaternary"
           />
@@ -242,29 +257,29 @@ export function EditorView() {
             {body.trim() ? (
               <MarkdownPreview body={body} altTexts={altTexts} />
             ) : (
-              <Text color="tertiary">Nothing to preview yet.</Text>
+              <Text color="tertiary">{t("editor.previewEmpty")}</Text>
             )}
           </div>
         )}
 
         <FieldGroup>
           <Field
-            label="Content warning"
-            description="Hide the body behind a short warning until the reader chooses to reveal it."
+            label={t("editor.contentWarningLabel")}
+            description={t("editor.contentWarningDescription")}
             orientation="horizontal"
           >
             <Switch
               checked={contentWarningEnabled}
               onCheckedChange={setContentWarningEnabled}
-              aria-label="Enable content warning"
+              aria-label={t("editor.altTextEnableAriaLabel")}
             />
           </Field>
           {contentWarningEnabled ? (
-            <Field label="Warning text" orientation="vertical">
+            <Field label={t("editor.contentWarningTextLabel")} orientation="vertical">
               <Input
                 value={contentWarning}
                 onChange={(event) => setContentWarning(event.target.value)}
-                placeholder="e.g. Discussion of burnout"
+                placeholder={t("editor.contentWarningTextPlaceholder")}
               />
             </Field>
           ) : null}
@@ -272,24 +287,57 @@ export function EditorView() {
 
         <FieldGroup>
           <Field
-            label="Tags"
-            description="Comma-separated topics that help others find this knowledge."
+            label={t("editor.tagsLabel")}
+            description={t("editor.tagsDescription")}
             orientation="vertical"
           >
             <Input
               value={tagsInput}
               onChange={(event) => setTagsInput(event.target.value)}
-              placeholder="knowledge, solid, accessibility"
+              placeholder={t("editor.tagsPlaceholder")}
             />
           </Field>
         </FieldGroup>
 
+        {aiStatus.data?.enabled ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="small"
+                variant="filled"
+                disabled={suggestHashtags.isPending || !body.trim() || !aiProvider}
+                onClick={() => suggestHashtags.mutate()}
+              >
+                <Sparkles />
+                {t("editor.suggestHashtags")}
+              </Button>
+              <AiProviderControl status={aiStatus.data} provider={aiProvider} onChange={setAiProvider} />
+            </div>
+            {suggestedTags.length ? (
+              <div className="flex flex-wrap gap-2">
+                {suggestedTags.map((tag) => (
+                  <Button
+                    key={tag}
+                    size="small"
+                    variant="transparent"
+                    disabled={currentTags.has(tag)}
+                    onClick={() => addSuggestedTag(tag)}
+                  >
+                    <Plus />
+                    #{tag}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <Text variant="strong">Alt text</Text>
+              <Text variant="strong">{t("editor.altTextHeading")}</Text>
               <Text variant="small" color="tertiary">
-                Describe every image so the knowledge stays accessible.
+                {t("editor.altTextDescription")}
               </Text>
             </div>
             <ImagePlus className="size-4 shrink-0 text-tertiary" />
@@ -298,17 +346,17 @@ export function EditorView() {
           {altTexts.length === 0 ? (
             <div className="rounded-control border border-dashed border-secondary px-4 py-4 flex flex-col gap-3">
               <Text variant="small" color="secondary">
-                No images detected yet. Add Markdown images like{" "}
+                {t("editor.altTextEmptyPrefix")}
                 <Text as="span" variant="small-mono" color="primary">
-                  ![caption](url)
-                </Text>{" "}
-                or attach a source manually.
+                  {t("editor.altTextSyntax")}
+                </Text>
+                {t("editor.altTextEmptySuffix")}
               </Text>
               <div className="flex items-center gap-2">
                 <Input
                   value={manualAltSrc}
                   onChange={(event) => setManualAltSrc(event.target.value)}
-                  placeholder="https://…/image.png"
+                  placeholder={t("editor.altTextUrlPlaceholder")}
                   className="flex-1"
                 />
                 <Button
@@ -327,7 +375,7 @@ export function EditorView() {
                   }}
                 >
                   <Plus />
-                  Add
+                  {t("common.add")}
                 </Button>
               </div>
             </div>
@@ -351,7 +399,7 @@ export function EditorView() {
                       size="small"
                       variant="transparent"
                       iconOnly
-                      aria-label="Remove alt text entry"
+                      aria-label={t("editor.altTextRemoveAriaLabel")}
                       onClick={() =>
                         setAltTexts((current) => current.filter((item) => item.src !== entry.src))
                       }
@@ -369,7 +417,7 @@ export function EditorView() {
                         ),
                       );
                     }}
-                    placeholder="Describe what the image shows"
+                    placeholder={t("editor.altTextDescriptionPlaceholder")}
                     size="small"
                   />
                 </div>
@@ -378,7 +426,7 @@ export function EditorView() {
                 <Input
                   value={manualAltSrc}
                   onChange={(event) => setManualAltSrc(event.target.value)}
-                  placeholder="Add another image URL"
+                  placeholder={t("editor.altTextAddAnother")}
                   className="flex-1"
                 />
                 <Button
@@ -397,7 +445,7 @@ export function EditorView() {
                   }}
                 >
                   <Plus />
-                  Add
+                  {t("common.add")}
                 </Button>
               </div>
             </div>
@@ -405,8 +453,7 @@ export function EditorView() {
         </div>
 
         <Text variant="small" color="quaternary">
-          Publish keeps a local copy, then shares to any connected Solid Pod, GitHub repository, and
-          FediPod (Fediverse).
+          {t("editor.publishFootnote")}
         </Text>
       </div>
     </ScrollArea>

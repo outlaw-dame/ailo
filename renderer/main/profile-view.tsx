@@ -1,9 +1,13 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, CalendarDays, Copy, Github, Globe2, Link2, Unplug } from "lucide-react";
+import { AtSign, Bookmark, CalendarDays, Copy, Github, Globe2, Link2, Unplug } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   Badge,
   Button,
+  CollapsibleContent,
+  CollapsibleRoot,
+  CollapsibleTrigger,
   Field,
   FieldGroup,
   FieldSet,
@@ -12,10 +16,12 @@ import {
   Switch,
   Text,
   Textarea,
+  ToolbarBackButton,
   toast,
 } from "@glaze/core/components";
 
 import { api } from "../lib/api";
+import { BookmarksPanel } from "./bookmarks-panel";
 
 function normalizeCalPath(input: string): string {
   const trimmed = input.trim();
@@ -31,7 +37,8 @@ function normalizeCalPath(input: string): string {
   return trimmed.replace(/^\//, "").replace(/\/$/, "");
 }
 
-export function ProfileView() {
+export function ProfileView({ settingsOnly = false }: { settingsOnly?: boolean } = {}) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
 
   const profileQuery = useQuery({
@@ -41,30 +48,44 @@ export function ProfileView() {
   const githubQuery = useQuery({
     queryKey: ["github", "status"],
     queryFn: () => api.github.status(),
+    enabled: settingsOnly,
   });
   const solidQuery = useQuery({
     queryKey: ["solid", "status"],
     queryFn: () => api.solid.status(),
+    enabled: settingsOnly,
   });
   const fediQuery = useQuery({
     queryKey: ["fedipod", "status"],
     queryFn: () => api.fedipod.status(),
+    enabled: settingsOnly,
+  });
+  const creatorQuery = useQuery({
+    queryKey: ["fedipod", "creator-attribution"],
+    queryFn: api.fedipod.creatorAttribution,
+    enabled: settingsOnly && Boolean(fediQuery.data?.connected),
   });
   const reposQuery = useQuery({
     queryKey: ["github", "repos"],
     queryFn: () => api.github.listRepos(),
-    enabled: Boolean(githubQuery.data?.connected),
+    enabled: settingsOnly && Boolean(githubQuery.data?.connected),
   });
 
   const [displayName, setDisplayName] = React.useState("");
   const [bio, setBio] = React.useState("");
+  const [avatarUrl, setAvatarUrl] = React.useState("");
+  const [bannerUrl, setBannerUrl] = React.useState("");
   const [calComPath, setCalComPath] = React.useState("");
   const [solidIssuer, setSolidIssuer] = React.useState("https://login.inrupt.com");
   const [solidPodRoot, setSolidPodRoot] = React.useState("");
   const [repoName, setRepoName] = React.useState("ailo-notes");
   const [fediBaseUrl, setFediBaseUrl] = React.useState("http://localhost:8030");
   const [fediToken, setFediToken] = React.useState("");
+  const [fediPassword, setFediPassword] = React.useState("");
+  const [fediNeedsPassword, setFediNeedsPassword] = React.useState(false);
+  const [creatorDomains, setCreatorDomains] = React.useState("");
   const [hydrated, setHydrated] = React.useState(false);
+  const [view, setView] = React.useState<"profile" | "bookmarks">("profile");
 
   React.useEffect(() => {
     const url = fediQuery.data?.baseUrl;
@@ -72,10 +93,16 @@ export function ProfileView() {
   }, [fediQuery.data?.baseUrl]);
 
   React.useEffect(() => {
+    if (creatorQuery.data) setCreatorDomains(creatorQuery.data.domains.join("\n"));
+  }, [creatorQuery.data]);
+
+  React.useEffect(() => {
     const profile = profileQuery.data;
     if (!profile || hydrated) return;
     setDisplayName(profile.displayName);
     setBio(profile.bio);
+    setAvatarUrl(profile.avatarUrl ?? "");
+    setBannerUrl(profile.bannerUrl ?? "");
     setCalComPath(profile.calComPath);
     setSolidIssuer(profile.solidIssuer || "https://login.inrupt.com");
     setSolidPodRoot(profile.solidPodRoot);
@@ -87,15 +114,17 @@ export function ProfileView() {
       api.profile.update({
         displayName: displayName.trim(),
         bio: bio.trim(),
+        avatarUrl: avatarUrl.trim(),
+        bannerUrl: bannerUrl.trim(),
         calComPath: normalizeCalPath(calComPath),
         solidIssuer: solidIssuer.trim() || "https://login.inrupt.com",
         solidPodRoot: solidPodRoot.trim(),
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["profile"] });
-      toast.success("Profile saved");
+      toast.success(t("profile.saveProfileSuccess"));
     },
-    onError: (error: Error) => toast.error(error.message || "Could not save profile"),
+    onError: (error: Error) => toast.error(error.message || t("profile.saveProfileError")),
   });
 
   const githubConnect = useMutation({
@@ -105,9 +134,9 @@ export function ProfileView() {
         queryClient.invalidateQueries({ queryKey: ["github"] }),
         queryClient.invalidateQueries({ queryKey: ["profile"] }),
       ]);
-      toast.success("GitHub connected");
+      toast.success(t("profile.githubConnectSuccess"));
     },
-    onError: (error: Error) => toast.error(error.message || "GitHub connection failed"),
+    onError: (error: Error) => toast.error(error.message || t("profile.githubConnectError")),
   });
 
   const githubDisconnect = useMutation({
@@ -117,9 +146,9 @@ export function ProfileView() {
         queryClient.invalidateQueries({ queryKey: ["github"] }),
         queryClient.invalidateQueries({ queryKey: ["profile"] }),
       ]);
-      toast.success("GitHub disconnected");
+      toast.success(t("profile.githubDisconnectSuccess"));
     },
-    onError: (error: Error) => toast.error(error.message || "Could not disconnect GitHub"),
+    onError: (error: Error) => toast.error(error.message || t("profile.githubDisconnectError")),
   });
 
   const createRepo = useMutation({
@@ -129,9 +158,9 @@ export function ProfileView() {
         queryClient.invalidateQueries({ queryKey: ["github"] }),
         queryClient.invalidateQueries({ queryKey: ["profile"] }),
       ]);
-      toast.success(`Created ${repo.fullName}`);
+      toast.success(t("profile.githubRepoCreated", { fullName: repo.fullName }));
     },
-    onError: (error: Error) => toast.error(error.message || "Could not create repository"),
+    onError: (error: Error) => toast.error(error.message || t("profile.githubRepoCreateError")),
   });
 
   const setRepo = useMutation({
@@ -141,9 +170,9 @@ export function ProfileView() {
         queryClient.invalidateQueries({ queryKey: ["github"] }),
         queryClient.invalidateQueries({ queryKey: ["profile"] }),
       ]);
-      toast.success("Repository selected");
+      toast.success(t("profile.githubRepoSelected"));
     },
-    onError: (error: Error) => toast.error(error.message || "Could not select repository"),
+    onError: (error: Error) => toast.error(error.message || t("profile.githubRepoSelectError")),
   });
 
   const solidConnect = useMutation({
@@ -153,9 +182,9 @@ export function ProfileView() {
         queryClient.invalidateQueries({ queryKey: ["solid"] }),
         queryClient.invalidateQueries({ queryKey: ["profile"] }),
       ]);
-      toast.success(`Connected as ${result.webId}`);
+      toast.success(t("profile.solidConnectSuccess", { webId: result.webId }));
     },
-    onError: (error: Error) => toast.error(error.message || "Solid connection failed"),
+    onError: (error: Error) => toast.error(error.message || t("profile.solidConnectError")),
   });
 
   const solidDisconnect = useMutation({
@@ -165,28 +194,50 @@ export function ProfileView() {
         queryClient.invalidateQueries({ queryKey: ["solid"] }),
         queryClient.invalidateQueries({ queryKey: ["profile"] }),
       ]);
-      toast.success("Solid disconnected");
+      toast.success(t("profile.solidDisconnectSuccess"));
     },
-    onError: (error: Error) => toast.error(error.message || "Could not disconnect Solid"),
+    onError: (error: Error) => toast.error(error.message || t("profile.solidDisconnectError")),
+  });
+
+  const fediLogin = useMutation({
+    mutationFn: () => api.fedipod.login(
+      fediBaseUrl.trim(),
+      fediPassword.trim() || undefined,
+    ),
+    onSuccess: async (result) => {
+      if (result.status === "password_required") {
+        setFediNeedsPassword(true);
+        toast.error(t("profile.fediPasswordRequired"));
+        return;
+      }
+      setFediPassword("");
+      setFediNeedsPassword(false);
+      await queryClient.invalidateQueries({ queryKey: ["fedipod"] });
+      toast.success(t("profile.fediConnectSuccess", { handle: result.account.acct || result.account.username }));
+    },
+    onError: (error: Error) => toast.error(error.message || t("profile.fediLoginError")),
   });
 
   const fediConnect = useMutation({
-    mutationFn: () => api.fedipod.connect(fediBaseUrl.trim(), fediToken.trim()),
+    mutationFn: () => api.fedipod.connect(
+      fediBaseUrl.trim(),
+      fediToken.trim(),
+    ),
     onSuccess: async (result) => {
       setFediToken("");
       await queryClient.invalidateQueries({ queryKey: ["fedipod"] });
-      toast.success(`Connected as @${result.account.acct || result.account.username}`);
+      toast.success(t("profile.fediConnectSuccess", { handle: result.account.acct || result.account.username }));
     },
-    onError: (error: Error) => toast.error(error.message || "FediPod connection failed"),
+    onError: (error: Error) => toast.error(error.message || t("profile.fediConnectError")),
   });
 
   const fediDisconnect = useMutation({
     mutationFn: () => api.fedipod.disconnect(),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["fedipod"] });
-      toast.success("FediPod disconnected");
+      toast.success(t("profile.fediDisconnectSuccess"));
     },
-    onError: (error: Error) => toast.error(error.message || "Could not disconnect FediPod"),
+    onError: (error: Error) => toast.error(error.message || t("profile.fediDisconnectError")),
   });
 
   const setCreatorAttribution = useMutation({
@@ -194,7 +245,18 @@ export function ProfileView() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["profile"] });
     },
-    onError: (error: Error) => toast.error(error.message || "Could not update creator attribution"),
+    onError: (error: Error) => toast.error(error.message || t("profile.fediCreatorUpdateError")),
+  });
+  const saveCreatorDomains = useMutation({
+    mutationFn: () => api.fedipod.updateCreatorAttribution(
+      creatorDomains.split(/[\n,]+/).map((domain) => domain.trim()).filter(Boolean),
+    ),
+    onSuccess: async (result) => {
+      setCreatorDomains(result.domains.join("\n"));
+      await queryClient.invalidateQueries({ queryKey: ["fedipod", "creator-attribution"] });
+      toast.success(t("profile.fediCreatorDomainsSaveSuccess"));
+    },
+    onError: (error: Error) => toast.error(error.message || t("profile.fediCreatorDomainsError")),
   });
 
   const calPath = normalizeCalPath(calComPath);
@@ -204,33 +266,88 @@ export function ProfileView() {
   const solid = solidQuery.data;
   const fedi = fediQuery.data;
 
-  return (
-    <ScrollArea title="You" subtitle="Identity, destinations, and booking" className="h-full">
-      <div className="px-8 py-6 max-w-3xl flex flex-col gap-8 pb-16">
+  const content = (
+      <div className={settingsOnly ? "flex max-w-3xl flex-col gap-8" : "px-8 py-6 max-w-3xl flex flex-col gap-8 pb-16"}>
+        {!settingsOnly ? (
         <section className="flex flex-col gap-3">
-          <div>
-            <Text variant="heading2">Masthead</Text>
+          <div className="flex flex-col gap-1">
+            <Text variant="heading2">{t("profile.mastheadTitle")}</Text>
             <Text color="secondary" className="mt-1">
-              The quiet byline behind the knowledge you share.
+              {t("profile.mastheadSubtitle")}
             </Text>
           </div>
-          <FieldGroup>
-            <Field label="Display name" orientation="vertical">
-              <Input
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                placeholder="Ada Lovelace"
-              />
-            </Field>
-            <Field label="Bio" orientation="vertical">
-              <Textarea
-                value={bio}
-                onChange={(event) => setBio(event.target.value)}
-                placeholder="I write about the open web and careful systems."
-                size="large"
-              />
-            </Field>
-          </FieldGroup>
+
+          {/* Banner + avatar preview.
+              Banner uses <img> (not CSS background-image) so animated GIFs
+              play correctly. object-cover replicates background-size:cover. */}
+          <div className="relative rounded-control overflow-hidden border border-secondary">
+            <div className="w-full h-28 bg-well flex items-center justify-center overflow-hidden">
+              {bannerUrl ? (
+                <img
+                  src={bannerUrl}
+                  alt=""
+                  className="size-full object-cover"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : (
+                <Text variant="small" color="tertiary">{t("profile.bannerPlaceholder")}</Text>
+              )}
+            </div>
+            <div className="absolute left-4 -bottom-7">
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={t("profile.avatarAlt")}
+                  className="size-16 rounded-full border-2 border-background object-cover bg-well shadow-sm"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : (
+                <div
+                  className="size-16 rounded-full border-2 border-background bg-well flex items-center justify-center shadow-sm"
+                  aria-label={t("profile.avatarPlaceholderLabel")}
+                  role="img"
+                >
+                  <Text variant="mini" color="tertiary">{t("profile.avatarPhotoLabel")}</Text>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-9">
+            <FieldGroup>
+              <Field label={t("profile.avatarUrlLabel")} description={t("profile.avatarUrlDescription")} orientation="vertical">
+                <Input
+                  value={avatarUrl}
+                  onChange={(event) => setAvatarUrl(event.target.value)}
+                  placeholder={t("profile.avatarUrlPlaceholder")}
+                  type="url"
+                />
+              </Field>
+              <Field label={t("profile.bannerUrlLabel")} description={t("profile.bannerUrlDescription")} orientation="vertical">
+                <Input
+                  value={bannerUrl}
+                  onChange={(event) => setBannerUrl(event.target.value)}
+                  placeholder={t("profile.bannerUrlPlaceholder")}
+                  type="url"
+                />
+              </Field>
+              <Field label={t("profile.displayNameLabel")} orientation="vertical">
+                <Input
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  placeholder={t("profile.displayNamePlaceholder")}
+                />
+              </Field>
+              <Field label={t("profile.bioLabel")} orientation="vertical">
+                <Textarea
+                  value={bio}
+                  onChange={(event) => setBio(event.target.value)}
+                  placeholder={t("profile.bioPlaceholder")}
+                  size="large"
+                />
+              </Field>
+            </FieldGroup>
+          </div>
           <div className="flex justify-end">
             <Button
               variant="accent"
@@ -238,51 +355,53 @@ export function ProfileView() {
               disabled={saveProfile.isPending}
               onClick={() => saveProfile.mutate()}
             >
-              Save profile
+              {t("profile.saveProfile")}
             </Button>
           </div>
         </section>
+        ) : null}
 
+        {settingsOnly ? (
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <Globe2 className="size-4 text-secondary shrink-0" />
-            <Text variant="heading2">Solid Pod</Text>
+            <Text variant="heading2">{t("profile.solidTitle")}</Text>
             {solid?.connected ? (
-              <Badge color="green">Connected</Badge>
+              <Badge color="green">{t("common.connected")}</Badge>
             ) : (
-              <Badge>Not connected</Badge>
+              <Badge>{t("common.notConnected")}</Badge>
             )}
           </div>
           <Text color="secondary">
-            Sign in with your WebID. Published notes are saved as Markdown files in your Pod.
+            {t("profile.solidDescription")}
           </Text>
           <FieldGroup>
             <Field
-              label="Identity provider"
-              description="Inrupt, solidcommunity.net, or your own Solid-OIDC issuer."
+              label={t("profile.solidIdentityProviderLabel")}
+              description={t("profile.solidIdentityProviderDescription")}
               orientation="vertical"
             >
               <Input
                 value={solidIssuer}
                 onChange={(event) => setSolidIssuer(event.target.value)}
-                placeholder="https://login.inrupt.com"
+                placeholder={t("profile.solidIssuerPlaceholder")}
               />
             </Field>
             <Field
-              label="Pod root (optional)"
-              description="Leave blank to auto-detect storage from your WebID profile."
+              label={t("profile.solidPodRootLabel")}
+              description={t("profile.solidPodRootDescription")}
               orientation="vertical"
             >
               <Input
                 value={solidPodRoot}
                 onChange={(event) => setSolidPodRoot(event.target.value)}
-                placeholder="https://storage.inrupt.com/…/"
+                placeholder={t("profile.solidPodRootPlaceholder")}
               />
             </Field>
           </FieldGroup>
           {solid?.webId ? (
             <Text variant="small" color="tertiary" className="truncate" title={solid.webId}>
-              WebID · {solid.webId}
+              {t("profile.solidWebId", { webId: solid.webId })}
             </Text>
           ) : null}
           <div className="flex flex-wrap gap-2">
@@ -294,7 +413,7 @@ export function ProfileView() {
                 onClick={() => solidDisconnect.mutate()}
               >
                 <Unplug />
-                Disconnect
+                {t("common.disconnect")}
               </Button>
             ) : (
               <Button
@@ -306,25 +425,26 @@ export function ProfileView() {
                 }}
               >
                 <Link2 />
-                Connect Pod
+                {t("profile.solidConnect")}
               </Button>
             )}
           </div>
         </section>
+        ) : null}
 
+        {settingsOnly ? (
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <AtSign className="size-4 text-secondary shrink-0" />
-            <Text variant="heading2">FediPod</Text>
+            <Text variant="heading2">{t("profile.fediTitle")}</Text>
             {fedi?.connected ? (
-              <Badge color="green">Connected</Badge>
+              <Badge color="green">{t("common.connected")}</Badge>
             ) : (
-              <Badge>Not connected</Badge>
+              <Badge>{t("common.notConnected")}</Badge>
             )}
           </div>
           <Text color="secondary">
-            Connect your running FediPod agent — a personal ActivityPub server backed by your Solid
-            Pod. Ailo reads your home timeline and shares stories to the Fediverse.
+            {t("profile.fediDescription")}
           </Text>
           {fedi?.connected && fedi.account ? (
             <div className="flex flex-col gap-3">
@@ -354,18 +474,16 @@ export function ProfileView() {
                   onClick={() => fediDisconnect.mutate()}
                 >
                   <Unplug />
-                  Disconnect
+                  {t("common.disconnect")}
                 </Button>
               </div>
 
               <div className="flex flex-col gap-2 rounded-control border border-secondary px-3 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <Text variant="small-strong">Credit me as creator</Text>
+                    <Text variant="small-strong">{t("profile.fediCreatorTitle")}</Text>
                     <Text variant="mini" color="tertiary">
-                      Adds a fediverse:creator attribution to notes published on GitHub and your
-                      Solid Pod, so Mastodon credits @{fedi.account.acct || fedi.account.username}
-                      when they're shared.
+                      {t("profile.fediCreatorDescription")}
                     </Text>
                   </div>
                   <Switch
@@ -379,20 +497,22 @@ export function ProfileView() {
                     variant="mini"
                     color="tertiary"
                     className="min-w-0 flex-1 truncate font-mono"
-                    title={`<meta name="fediverse:creator" content="@${fedi.account.acct || fedi.account.username}">`}
+                    title={creatorQuery.data?.tag}
                   >
-                    {`<meta name="fediverse:creator" content="@${fedi.account.acct || fedi.account.username}">`}
+                    {creatorQuery.data?.tag || `Loading creator tag for @${fedi.account.acct || fedi.account.username}…`}
                   </Text>
                   <Button
                     size="small"
                     variant="transparent"
                     iconOnly
-                    aria-label="Copy meta tag"
+                    aria-label={t("profile.fediCreatorCopyAriaLabel")}
+                    disabled={!creatorQuery.data?.tag}
                     onClick={() => {
-                      const tag = `<meta name="fediverse:creator" content="@${fedi.account?.acct || fedi.account?.username}">`;
+                      const tag = creatorQuery.data?.tag;
+                      if (!tag) return;
                       void navigator.clipboard.writeText(tag).then(
-                        () => toast.success("Copied"),
-                        () => toast.error("Could not copy"),
+                        () => toast.success(t("profile.fediCreatorCopied")),
+                        () => toast.error(t("profile.fediCreatorCopyError")),
                       );
                     }}
                   >
@@ -400,65 +520,129 @@ export function ProfileView() {
                   </Button>
                 </div>
                 <Text variant="mini" color="quaternary">
-                  Paste this into your published site's HTML head to credit your Fediverse profile
-                  in Mastodon link previews.
+                  {t("profile.fediCreatorTagFootnote")}
                 </Text>
+                <Field
+                  label={t("profile.fediCreatorDomainsLabel")}
+                  description={t("profile.fediCreatorDomainsDescription")}
+                  orientation="vertical"
+                >
+                  <Textarea
+                    value={creatorDomains}
+                    onChange={(event) => setCreatorDomains(event.target.value)}
+                    placeholder={t("profile.fediCreatorDomainsPlaceholder")}
+                  />
+                </Field>
+                <div className="flex items-center justify-between gap-2">
+                  {creatorQuery.isError ? (
+                    <Text variant="mini" color="danger">{(creatorQuery.error as Error).message}</Text>
+                  ) : <span />}
+                  <Button size="small" variant="accent" disabled={saveCreatorDomains.isPending}
+                    onClick={() => saveCreatorDomains.mutate()}>
+                    {t("profile.fediCreatorDomainsSave")}
+                  </Button>
+                </div>
               </div>
             </div>
           ) : (
             <>
               <FieldGroup>
                 <Field
-                  label="FediPod URL"
-                  description="Where your FediPod agent is running. Default is http://localhost:8030."
+                  label={t("profile.fediUrlLabel")}
+                  description={t("profile.fediUrlDescription")}
                   orientation="vertical"
                 >
                   <Input
                     value={fediBaseUrl}
                     onChange={(event) => setFediBaseUrl(event.target.value)}
-                    placeholder="http://localhost:8030"
+                    placeholder={t("profile.fediUrlPlaceholder")}
                   />
                 </Field>
-                <Field
-                  label="Access token"
-                  description="A Mastodon-compatible access token from your FediPod instance."
-                  orientation="vertical"
-                >
-                  <Input
-                    type="password"
-                    value={fediToken}
-                    onChange={(event) => setFediToken(event.target.value)}
-                    placeholder="Paste your access token"
-                  />
-                </Field>
+                {fediNeedsPassword ? (
+                  <Field
+                    label={t("profile.fediPasswordLabel")}
+                    description={t("profile.fediPasswordDescription")}
+                    orientation="vertical"
+                  >
+                    <Input
+                      type="password"
+                      value={fediPassword}
+                      onChange={(event) => setFediPassword(event.target.value)}
+                      placeholder={t("profile.fediPasswordPlaceholder")}
+                      autoFocus
+                    />
+                  </Field>
+                ) : null}
               </FieldGroup>
               <div>
                 <Button
                   size="small"
                   variant="accent"
-                  disabled={fediConnect.isPending || !fediBaseUrl.trim() || !fediToken.trim()}
-                  onClick={() => fediConnect.mutate()}
+                  disabled={fediLogin.isPending || !fediBaseUrl.trim()}
+                  onClick={() => fediLogin.mutate()}
                 >
                   <Link2 />
-                  Connect FediPod
+                  {t("profile.fediLoginButton")}
                 </Button>
               </div>
+              <Text variant="small" color="tertiary">
+                {t("profile.fediLoginOAuthNotePrefix")}
+                <code>{t("profile.fediLoginOAuthEndpoint")}</code>
+                {t("profile.fediLoginOAuthNoteSuffix")}
+              </Text>
+
+              <CollapsibleRoot>
+                <CollapsibleTrigger variant="row">
+                  <Text variant="small" color="secondary">
+                    {t("profile.fediManualTokenToggle")}
+                  </Text>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="flex flex-col gap-3 pt-3">
+                    <Field
+                      label={t("profile.fediTokenLabel")}
+                      description={t("profile.fediTokenDescription")}
+                      orientation="vertical"
+                    >
+                      <Input
+                        type="password"
+                        value={fediToken}
+                        onChange={(event) => setFediToken(event.target.value)}
+                        placeholder={t("profile.fediTokenPlaceholder")}
+                      />
+                    </Field>
+                    <div>
+                      <Button
+                        size="small"
+                        variant="filled"
+                        disabled={fediConnect.isPending || !fediBaseUrl.trim() || !fediToken.trim()}
+                        onClick={() => fediConnect.mutate()}
+                      >
+                        <Link2 />
+                        {t("profile.fediConnectWithToken")}
+                      </Button>
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </CollapsibleRoot>
             </>
           )}
         </section>
+        ) : null}
 
+        {settingsOnly ? (
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <Github className="size-4 text-secondary shrink-0" />
-            <Text variant="heading2">GitHub</Text>
+            <Text variant="heading2">{t("profile.githubTitle")}</Text>
             {github?.connected ? (
-              <Badge color="green">Connected</Badge>
+              <Badge color="green">{t("common.connected")}</Badge>
             ) : (
-              <Badge>Not connected</Badge>
+              <Badge>{t("common.notConnected")}</Badge>
             )}
           </div>
           <Text color="secondary">
-            Create or choose a repository. Each published note becomes a Markdown commit.
+            {t("profile.githubDescription")}
           </Text>
 
           {github?.connected ? (
@@ -482,8 +666,8 @@ export function ProfileView() {
                 </div>
               </div>
 
-              <FieldSet title="Publishing repository">
-                <Field label="Create new" orientation="vertical">
+              <FieldSet title={t("profile.githubRepoSectionTitle")}>
+                <Field label={t("profile.githubRepoNewLabel")} orientation="vertical">
                   <div className="flex items-center gap-2 w-full">
                     <Input
                       value={repoName}
@@ -497,14 +681,16 @@ export function ProfileView() {
                       disabled={createRepo.isPending || !repoName.trim()}
                       onClick={() => createRepo.mutate()}
                     >
-                      Create
+                      {t("common.create")}
                     </Button>
                   </div>
                 </Field>
                 <Field
-                  label="Or choose existing"
+                  label={t("profile.githubRepoExistingLabel")}
                   description={
-                    github.repo ? `Active: ${github.repo}` : "No repository selected yet."
+                    github.repo
+                      ? t("profile.githubRepoExistingActiveDescription", { repo: github.repo })
+                      : t("profile.githubRepoExistingNoneDescription")
                   }
                   orientation="vertical"
                 >
@@ -516,11 +702,11 @@ export function ProfileView() {
                       if (value) setRepo.mutate(value);
                     }}
                   >
-                    <option value="">Select a repository…</option>
+                    <option value="">{t("profile.githubRepoSelectPlaceholder")}</option>
                     {(reposQuery.data ?? []).map((repo) => (
                       <option key={repo.fullName} value={repo.fullName}>
                         {repo.fullName}
-                        {repo.private ? " (private)" : ""}
+                        {repo.private ? ` ${t("profile.githubRepoPrivate")}` : ""}
                       </option>
                     ))}
                   </select>
@@ -535,7 +721,7 @@ export function ProfileView() {
                   onClick={() => githubDisconnect.mutate()}
                 >
                   <Unplug />
-                  Disconnect
+                  {t("common.disconnect")}
                 </Button>
               </div>
             </div>
@@ -547,30 +733,31 @@ export function ProfileView() {
               onClick={() => githubConnect.mutate()}
             >
               <Github />
-              Connect GitHub
+              {t("profile.githubConnect")}
             </Button>
           )}
         </section>
+        ) : null}
 
+        {!settingsOnly ? (
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <CalendarDays className="size-4 text-secondary shrink-0" />
-            <Text variant="heading2">Cal.com</Text>
+            <Text variant="heading2">{t("profile.calTitle")}</Text>
           </div>
           <Text color="secondary">
-            Let readers book a session to keep the conversation going. Paste your Cal.com username
-            or event path.
+            {t("profile.calDescription")}
           </Text>
           <FieldGroup>
             <Field
-              label="Booking path"
-              description='Examples: "ada" or "ada/30min" or a full cal.com URL.'
+              label={t("profile.calPathLabel")}
+              description={t("profile.calPathDescription")}
               orientation="vertical"
             >
               <Input
                 value={calComPath}
                 onChange={(event) => setCalComPath(event.target.value)}
-                placeholder="you/30min"
+                placeholder={t("profile.calPathPlaceholder")}
               />
             </Field>
           </FieldGroup>
@@ -581,20 +768,20 @@ export function ProfileView() {
               disabled={saveProfile.isPending}
               onClick={() => saveProfile.mutate()}
             >
-              Save booking link
+              {t("profile.calSaveButton")}
             </Button>
           </div>
 
           {calEmbedUrl ? (
             <div className="rounded-control border border-secondary overflow-hidden bg-well">
               <div className="px-3 py-2 border-b border-separator flex items-center justify-between gap-2">
-                <Text variant="small-strong">Book a session</Text>
+                <Text variant="small-strong">{t("profile.calEmbedTitle")}</Text>
                 <Text variant="mini" color="tertiary" className="truncate">
                   cal.com/{calPath}
                 </Text>
               </div>
               <iframe
-                title="Cal.com scheduler"
+                title={t("profile.calEmbedTitle")}
                 src={calEmbedUrl}
                 className="w-full h-[640px] bg-transparent border-0"
                 loading="lazy"
@@ -603,11 +790,47 @@ export function ProfileView() {
             </div>
           ) : (
             <div className="rounded-control border border-dashed border-secondary px-4 py-8 text-center">
-              <Text color="tertiary">Add a Cal.com path to embed your scheduler here.</Text>
+              <Text color="tertiary">{t("profile.calEmbedEmpty")}</Text>
             </div>
           )}
         </section>
+        ) : null}
       </div>
+  );
+
+  if (settingsOnly) return content;
+
+  if (view === "bookmarks") {
+    return (
+      <ScrollArea
+        title={t("profile.bookmarksTabLabel")}
+        leading={<ToolbarBackButton onClick={() => setView("profile")} />}
+        className="h-full"
+      >
+        <div className="px-8 py-6 max-w-3xl">
+          <BookmarksPanel />
+        </div>
+      </ScrollArea>
+    );
+  }
+
+  return (
+    <ScrollArea
+      title={t("profile.title")}
+      subtitle={t("profile.subtitle")}
+      actions={
+        <Button size="small" variant="filled" onClick={() => setView("bookmarks")}>
+          <Bookmark />
+          {t("profile.bookmarksTabLabel")}
+        </Button>
+      }
+      className="h-full"
+    >
+      {content}
     </ScrollArea>
   );
+}
+
+export function AccountSettings() {
+  return <ProfileView settingsOnly />;
 }

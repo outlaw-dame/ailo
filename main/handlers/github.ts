@@ -3,6 +3,8 @@ import { ipcMain, logger } from "@glaze/core/backend";
 import { githubService } from "../services/github-service.js";
 import { postsStore } from "../services/posts-store.js";
 import { profileStore } from "../services/profile-store.js";
+import { t } from "../services/i18n.js";
+import { postNotFoundError, requireString } from "../services/handler-validation.js";
 
 export function registerGitHubHandlers(): void {
   ipcMain.handle("github:connect", async () => {
@@ -42,7 +44,7 @@ export function registerGitHubHandlers(): void {
 
   ipcMain.handle("github:createRepo", async (_event, name: unknown, isPrivate: unknown) => {
     if (typeof name !== "string" || !name.trim()) {
-      throw new Error("Repository name is required");
+      throw new Error(t("backendCommon.fieldRequired", { field: t("backendFields.repositoryName") }));
     }
     try {
       const repo = await githubService.createRepo(name, Boolean(isPrivate));
@@ -59,7 +61,7 @@ export function registerGitHubHandlers(): void {
 
   ipcMain.handle("github:setRepo", async (_event, fullName: unknown) => {
     if (typeof fullName !== "string" || !fullName.includes("/")) {
-      throw new Error("Repository must be owner/name");
+      throw new Error(t("backendGithub.repoFormatInvalid"));
     }
     await githubService.setActiveRepo(fullName);
     ipcMain.broadcast("github:status-changed", { repo: fullName });
@@ -67,12 +69,12 @@ export function registerGitHubHandlers(): void {
   });
 
   ipcMain.handle("github:publishPost", async (_event, postId: unknown) => {
-    if (typeof postId !== "string" || !postId) throw new Error("Post id is required");
+    const id = requireString(postId, "backendFields.postId");
     try {
-      const post = await postsStore.get(postId);
-      if (!post) throw new Error(`Post not found: ${postId}`);
+      const post = await postsStore.get(id);
+      if (!post) throw postNotFoundError(id);
       const result = await githubService.publishPost(post);
-      const updated = await postsStore.markPublished(postId, { githubPath: result.path });
+      const updated = await postsStore.markPublished(id, { githubPath: result.path });
       return { post: updated, publish: result };
     } catch (error) {
       logger.error("github", `publishPost failed: ${String(error)}`);

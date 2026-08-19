@@ -5,18 +5,19 @@ import { githubService } from "../services/github-service.js";
 import { postsStore } from "../services/posts-store.js";
 import { profileStore } from "../services/profile-store.js";
 import { solidService } from "../services/solid-service.js";
+import { postNotFoundError, requireString } from "../services/handler-validation.js";
 
 /**
  * Unified publish: marks the post published locally, then pushes to any
  * connected destinations (Solid Pod and/or GitHub repo).
  */
 export function registerPublishHandlers(): void {
-  ipcMain.handle("publish:post", async (_event, postId: unknown) => {
-    if (typeof postId !== "string" || !postId) throw new Error("Post id is required");
+  ipcMain.handle("publish:post", async (_event, rawPostId: unknown) => {
+    const postId = requireString(rawPostId, "backendFields.postId");
 
     try {
       const post = await postsStore.get(postId);
-      if (!post) throw new Error(`Post not found: ${postId}`);
+      if (!post) throw postNotFoundError(postId);
 
       // Ensure local status flips to published even if remote targets fail.
       let updated = await postsStore.update(postId, { status: "published" });

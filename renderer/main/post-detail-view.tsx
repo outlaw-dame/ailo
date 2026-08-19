@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { ExternalLink, Pencil, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   Badge,
   Button,
@@ -20,6 +21,7 @@ import {
 } from "../lib/markdown";
 
 export function PostDetailView() {
+  const { t } = useTranslation();
   const { postId } = useParams({ from: "/post/$postId" });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -33,11 +35,11 @@ export function PostDetailView() {
     mutationFn: () => api.posts.remove(postId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["posts"] });
-      toast.success("Story deleted");
+      toast.success(t("postDetail.deleteSuccess"));
       void navigate({ to: "/" });
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Could not delete story");
+      toast.error(error.message || t("postDetail.deleteError"));
     },
   });
 
@@ -47,11 +49,11 @@ export function PostDetailView() {
   const coverAlt =
     post?.altTexts.find((entry) => entry.src === coverImage)?.alt ||
     post?.title ||
-    "Story cover";
+    t("postDetail.coverImageAlt");
 
   return (
     <ScrollArea
-      title={post ? "" : postQuery.isLoading ? "Loading…" : "Story"}
+      title={post ? "" : postQuery.isLoading ? t("common.loading") : t("postDetail.title")}
       leading={
         <ToolbarBackButton
           onClick={() => {
@@ -70,14 +72,14 @@ export function PostDetailView() {
               }}
             >
               <Pencil />
-              Edit
+              {t("postDetail.editButton")}
             </Button>
             <Button
               size="small"
               variant="transparent"
               disabled={deleteMutation.isPending}
               onClick={() => {
-                if (window.confirm("Delete this story? This cannot be undone.")) {
+                if (window.confirm(t("postDetail.deleteConfirm"))) {
                   deleteMutation.mutate();
                 }
               }}
@@ -98,7 +100,7 @@ export function PostDetailView() {
         </div>
       ) : !post ? (
         <div className="px-8 py-10">
-          <Text color="secondary">This story could not be found.</Text>
+          <Text color="secondary">{t("postDetail.notFound")}</Text>
         </div>
       ) : (
         <article className="pb-16">
@@ -115,9 +117,9 @@ export function PostDetailView() {
               <div className="relative z-10 flex min-h-[220px] flex-col justify-end gap-3 p-7 sm:min-h-[280px] sm:p-9">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge color={post.status === "published" ? "green" : "secondary"}>
-                    {post.status === "published" ? "Published" : "Draft"}
+                    {post.status === "published" ? t("postDetail.statusPublished") : t("postDetail.statusDraft")}
                   </Badge>
-                  {post.contentWarning ? <Badge color="yellow">Content warning</Badge> : null}
+                  {post.contentWarning ? <Badge color="yellow">{t("postDetail.contentWarningBadge")}</Badge> : null}
                   {post.tags.map((tag) => (
                     <Badge key={tag} color="secondary">
                       {tag}
@@ -129,7 +131,7 @@ export function PostDetailView() {
                   variant="heading1"
                   className="max-w-3xl text-balance text-[color-mix(in_oklab,var(--bg)_96%,white)]!"
                 >
-                  {post.title || "Untitled"}
+                  {post.title || t("postDetail.untitled")}
                 </Text>
                 <Text
                   variant="small"
@@ -153,7 +155,7 @@ export function PostDetailView() {
             {(post.solidUrl || post.githubPath) && (
               <div className="mt-12 flex flex-col gap-2 border-t border-separator pt-6">
                 <Text variant="small-strong" color="tertiary">
-                  Shared on the open web
+                  {t("postDetail.sharedOnOpenWeb")}
                 </Text>
                 {post.solidUrl ? (
                   <a
@@ -165,12 +167,12 @@ export function PostDetailView() {
                     }}
                   >
                     <ExternalLink className="size-3.5 shrink-0" />
-                    <span className="truncate">Solid Pod</span>
+                    <span className="truncate">{t("postDetail.solidPod")}</span>
                   </a>
                 ) : null}
                 {post.githubPath ? (
                   <Text variant="small" color="secondary" className="truncate">
-                    GitHub · {post.githubPath}
+                    {t("postDetail.githubPath", { path: post.githubPath })}
                   </Text>
                 ) : null}
               </div>
