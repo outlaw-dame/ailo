@@ -188,9 +188,11 @@ export function StatusThreadView() {
         descendants: mergeById(previous.descendants, fresh.descendants),
       };
     },
-    // Context stale quickly — new replies come in.
+    // Context stale quickly — new replies come in. No refetchOnWindowFocus
+    // override: the default already refetches on focus once this staleTime
+    // has elapsed, without forcing it on every focus flicker regardless of
+    // freshness.
     staleTime: 15_000,
-    refetchOnWindowFocus: "always",
   });
 
   // Seed the focal post immediately from any cached timeline data so it

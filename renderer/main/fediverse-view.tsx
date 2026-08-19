@@ -19,7 +19,7 @@ import { StatusCard } from "../components/status-card";
 import { FediverseDiscover } from "../components/fediverse-discover";
 import { FediverseTags } from "../components/fediverse-tags";
 import { api } from "../lib/api";
-import { feedRefreshInterval } from "../lib/feed-refresh";
+import { adaptiveRefetchInterval, NEAR_TOP_THRESHOLD_PX } from "../lib/feed-refresh";
 import { formatRelativeDate } from "../lib/markdown";
 import { semanticFilterService } from "../lib/semantic-filter-service";
 import { filterCustomFeed } from "../lib/custom-feed-match";
@@ -57,6 +57,19 @@ export function FediverseView() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  // Declared up front (before the queries below reference them) so each
+  // query's refetchInterval can read live scroll position and pending-reveal
+  // state without a circular dependency — usePendingReveal needs a query's
+  // *data* to compute pendingCount, but the query's own refetchInterval
+  // needs to know that same pendingCount. The refs are updated later, after
+  // usePendingReveal runs; refetchInterval only reads them when the
+  // scheduler actually fires, by which point they're current.
+  const viewportRef = React.useRef<HTMLDivElement | null>(null);
+  const homePendingRef = React.useRef(0);
+  const tagPendingRef = React.useRef(0);
+  const forYouPendingRef = React.useRef(0);
+  const nearTop = () => (viewportRef.current?.scrollTop ?? 0) < NEAR_TOP_THRESHOLD_PX;
+
   const statusQuery = useQuery({
     queryKey: ["fedipod", "status"],
     queryFn: () => api.fedipod.status(),
@@ -76,7 +89,6 @@ export function FediverseView() {
     queryFn: () => api.fedipod.capabilities(),
     enabled: connected,
     refetchInterval: 60_000,
-    refetchOnWindowFocus: "always",
   });
   const fedipodReady = connected && capabilitiesQuery.isSuccess;
 
@@ -97,8 +109,12 @@ export function FediverseView() {
       return mergeById(previous, fresh);
     },
     enabled: fedipodReady && tab === "home",
-    refetchInterval: (query) => feedRefreshInterval(query.state.fetchFailureCount),
-    refetchOnWindowFocus: "always",
+    // See lib/feed-refresh.ts — mirrors Phanpy: half-speed when not near the
+    // top, paused entirely while there's a pending "new posts" batch. No
+    // refetchOnWindowFocus override either; the global 30s staleTime default
+    // already gates that gently instead of forcing a refetch on every
+    // window-focus flicker.
+    refetchInterval: (query) => adaptiveRefetchInterval(query.state.fetchFailureCount, homePendingRef.current, nearTop()),
   });
   const tagTimelineQuery = useQuery({
     queryKey: ["fedipod", "tag-timeline", selectedTag],
@@ -113,8 +129,7 @@ export function FediverseView() {
       return mergeById(previous, fresh);
     },
     enabled: fedipodReady && tab === "tag-feed" && Boolean(selectedTag),
-    refetchInterval: (query) => feedRefreshInterval(query.state.fetchFailureCount),
-    refetchOnWindowFocus: "always",
+    refetchInterval: (query) => adaptiveRefetchInterval(query.state.fetchFailureCount, tagPendingRef.current, nearTop()),
   });
   const notificationsQuery = useQuery({
     queryKey: ["fedipod", "notifications"],
@@ -132,8 +147,10 @@ export function FediverseView() {
       return mergeById(previous, notifications);
     },
     enabled: fedipodReady && tab === "notifications",
-    refetchInterval: (query) => feedRefreshInterval(query.state.fetchFailureCount),
-    refetchOnWindowFocus: "always",
+    // Notifications aren't gated behind a pending-reveal banner, so there's
+    // no "pause while pending" state to check — just the same near-top
+    // backoff.
+    refetchInterval: (query) => adaptiveRefetchInterval(query.state.fetchFailureCount, 0, nearTop()),
   });
   const forYouQuery = useQuery({
     queryKey: ["fedipod", "for-you"],
@@ -151,8 +168,7 @@ export function FediverseView() {
       return mergeById(previous, fresh);
     },
     enabled: fedipodReady && tab === "for-you" && aiStatusQuery.data?.enabled === true,
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: "always",
+    refetchInterval: () => (forYouPendingRef.current > 0 ? false : (nearTop() ? 60_000 : 120_000)),
   });
 
   const refresh = () => {
@@ -186,7 +202,6 @@ export function FediverseView() {
     setTab("tag-feed");
   }, []);
 
-  const viewportRef = React.useRef<HTMLDivElement | null>(null);
   const [feedIdle, setFeedIdle] = React.useState(true);
 
   React.useEffect(() => {
@@ -216,6 +231,9 @@ export function FediverseView() {
   const homeReveal = usePendingReveal(timelineQuery.data, viewportRef, "home");
   const tagReveal = usePendingReveal(tagTimelineQuery.data, viewportRef, selectedTag);
   const forYouReveal = usePendingReveal(forYouQuery.data, viewportRef, "for-you");
+  React.useEffect(() => { homePendingRef.current = homeReveal.pendingCount; }, [homeReveal.pendingCount]);
+  React.useEffect(() => { tagPendingRef.current = tagReveal.pendingCount; }, [tagReveal.pendingCount]);
+  React.useEffect(() => { forYouPendingRef.current = forYouReveal.pendingCount; }, [forYouReveal.pendingCount]);
   const scrollKey = tab === "tag-feed" ? `tag:${selectedTag ?? ""}` : tab;
   const scrollReady =
     tab === "home" ? !timelineQuery.isLoading

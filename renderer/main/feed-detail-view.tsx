@@ -11,6 +11,7 @@ import { StatusCard } from "../components/status-card";
 import { api } from "../lib/api";
 import { filterCustomFeed } from "../lib/custom-feed-match";
 import { semanticFilterService } from "../lib/semantic-filter-service";
+import { adaptiveRefetchInterval, NEAR_TOP_THRESHOLD_PX } from "../lib/feed-refresh";
 import { mergeById } from "../lib/timeline-merge";
 import { usePendingReveal } from "../lib/use-pending-reveal";
 import { useScrollMemory } from "../lib/use-scroll-memory";
@@ -31,6 +32,12 @@ export function FeedDetailView() {
   const status = useQuery({ queryKey: ["fedipod", "status"], queryFn: api.fedipod.status });
   const capabilitiesQuery = useQuery({ queryKey: ["fedipod", "capabilities"], queryFn: () => api.fedipod.capabilities() });
   const composer = useFediverseComposerState();
+
+  // See fediverse-view.tsx for why these are declared before the query that
+  // reads them — refetchInterval needs live pending/scroll state without a
+  // circular dependency on usePendingReveal's own output.
+  const viewportRef = React.useRef<HTMLDivElement | null>(null);
+  const pendingRef = React.useRef(0);
 
   const feedQuery = useQuery({
     queryKey: ["fedipod", "custom-feed", feedId],
@@ -64,12 +71,18 @@ export function FeedDetailView() {
       return mergeById(previous, fresh);
     },
     enabled: Boolean(feed),
-    refetchInterval: 30_000,
-    refetchOnWindowFocus: "always",
+    // Mirrors Phanpy's actual polling model — half-speed when not near the
+    // top, paused while a "new posts" batch is already pending. See
+    // lib/feed-refresh.ts.
+    refetchInterval: (query) => adaptiveRefetchInterval(
+      query.state.fetchFailureCount,
+      pendingRef.current,
+      (viewportRef.current?.scrollTop ?? 0) < NEAR_TOP_THRESHOLD_PX,
+    ),
   });
 
-  const viewportRef = React.useRef<HTMLDivElement | null>(null);
   const reveal = usePendingReveal(timeline.data, viewportRef, feedId);
+  React.useEffect(() => { pendingRef.current = reveal.pendingCount; }, [reveal.pendingCount]);
   useScrollMemory(viewportRef, `feed:${feedId}`, !timeline.isLoading);
 
   const drop = useMutation({

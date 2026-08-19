@@ -38,7 +38,6 @@ export function BookmarksPanel() {
       return mergeById(previous, fresh);
     },
     enabled: connected,
-    refetchOnWindowFocus: "always",
   });
 
   const {
